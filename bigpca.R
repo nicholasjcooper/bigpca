@@ -502,10 +502,10 @@ bmcapply <- function(bigMat,MARGIN,FUN,dir=NULL,by=200,n.cores=1,
   }
   ## run function as mclapply()
   if(split.to>=1) {
-    print("z1")
+    #print("z1")
     result.list <- multicore::mclapply(1:split.to, FUN=big.fnc, func=FUN, stepz=stepz, 
                                        bigMat=bigMat, dir=dir, bycol=bycol, mc.cores=n.cores,...)
-    print("z2")
+    #print("z2")
     if(is.function(combine.fn)) {
       result <- do.call(combine.fn,args=result.list)
     } else {
@@ -673,8 +673,8 @@ big.algebra.install.help <- function(verbose=FALSE) {
   # here try a simple way that might work, and if not, provide links and instructions to 
   # guide a manual installation
   try({ if(do.call("require",args=list("bigalgebra"))) { return(T) } })
+  if("bigalgebra" %in% search.cran("big")[[1]]) { must.use.package("bigalgebra",T); return() }
   cat("\nbigalgebra installation not found, will attempt to install now, but it can be tricky\n")
-  if("bigalgebra" %in% search.cran("big")[[1]]) { must.use.package("bigalgebra",T) }
   do.call("install.packages",args=list("bigalgebra", repos="http://R-Forge.R-project.org"))
   if(do.call("require",args=list("bigalgebra"))) {
     cat("bigalgebra seems to have installed successfully\n")
@@ -2897,65 +2897,4 @@ matmul <- function(A, x, transpose=FALSE)
   }
 }
 
-
-
-
-# 
-# t.big2 <- function(bigMat,dir,name="t.bigMat",R.descr="t.bigMat.RData",n.cores=1,max.gb=4,verbose=T) {
-#   #this is slow!
-#   if(!is.big.matrix(bigMat)) {
-#     if(is.matrix(bigMat) | is.data.frame(bigMat)) {
-#       warning("just a regular matrix, used t()") ; return(t(bigMat)) 
-#     } else {
-#       stop("invalid object for big.matrix transposition")    
-#     }
-#   }
-#   nR <- nrow(bigMat); nC <- ncol(bigMat)
-#   cN <- colnames(bigMat); rN <- rownames(bigMat)
-#   cat(" creating",nC,"x",nR,"target matrix,",name,"...")
-#   des <- paste(name,"descrFile",sep="_")
-#   bck <- paste(name,"bckFile",sep="_")
-#   bigTrans <- big.matrix(nrow=nC,ncol=nR, backingfile=bck,
-#                          backingpath=dir, descriptorfile=des)
-#   cat("done\n")
-#   if(verbose) { cat("\nAdding names\n") }
-#   options(bigmemory.allow.dimnames=TRUE)
-#   colnames(bigTrans) <- rN
-#   if(verbose) { cat(" added colnames\n") }
-#   rownames(bigTrans) <- cN
-#   if(verbose) { cat(" added rownames\n") }
-#   d2 <- d1 <- 0
-#   #try({
-#     split.to <- 10*round(estimate.memory(bigMat)) # split into .1GB chunks, save RAM without creating groups too small to process
-#     #if(n.cores>4) { split.to <- split.to * 4 } # divide more if using multicores
-#     stepz <- round(seq(from=1,to=nC+1,length.out=round((split.to+1))))
-#     if((tail(stepz,1)) != nC+1) { stepz <- c(stepz,nC+1) }
-#     split.to <- length(stepz)-1
-#     cat(" transposing 'bigMat' into new big.matrix object:\n")
-#     big.fnc <- function(cc,func,stepz,bigMat,bigTrans,dir,nR)
-#     {
-#       c1 <- stepz[cc]; c2 <- stepz[cc+1]-1  # check this in FN!
-#       # do the copying
-#       lilColRange <- c(c1:c2)
-#       if(is.finite(sum(lilColRange))) {
-#         #cat(range(lilColRange)); cat(dim(bigTrans)); cat(dim(bigMat))
-#         bigTrans[lilColRange,1:nR] <- t(bigMat[1:nR,lilColRange])
-#         flush(bigTrans)
-#       #  rm(next.block) ; gc() # remove the sub-matrix pointer each iteration  
-#        # return(out)
-#       }
-#       loop.tracker(cc,split.to)
-#       return(c(NULL))
-#     }
-#     ## run function as mclapply()
-#     if(split.to>=1) {
-#       result.list <- lapply(1:split.to, big.fnc, func=func, stepz=stepz, 
-#                            bigMat=bigMat, bigTrans=bigTrans, dir=dir,nR=nR)
-#       #,mc.cores=n.cores would be really easy to add mclapply, but actually slower!
-#     }
-#   flush(bigTrans)
-#   return(get.big.matrix(describe(bigTrans),dir))
-#     
-#   #})
-# }
 
