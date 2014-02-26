@@ -1,8 +1,7 @@
-source("~/github/bigmisc/bigmisc.R")
+
 library(testthat)
-library(reader)
-library(bigmemory)
-library(biganalytics)
+library(bigpca)
+
 setwd("/chiswick/data/ncooper/testingbigpca")
 #library(bigalgebra)
 

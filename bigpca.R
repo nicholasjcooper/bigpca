@@ -1,3 +1,12 @@
+###NAMESPACE ADDITIONS###
+# Depends: R (>= 2.14), grDevices, graphics, stats, utils, reader (>= 1.0.1), NCmisc (>= 1.1), bigmemory (>= 4.0.0), biganalytics
+# Imports: multicore, methods, bigmemory.sri, BH, irlba
+# Suggests:
+# importFrom(multicore, parallel, mclapply)
+# importFrom(irlba, irlba)
+# import(methods, bigmemory.sri, BH, grDevices, graphics, stats, utils, reader, NCmisc, bigmemory, biganalytics)
+###END NAMESPACE###
+
 
 #setMethod("print", signature=signature(x="big.matrix"), function(x,...) prv.big.matrix(x,...))
 
