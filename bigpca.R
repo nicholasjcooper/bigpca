@@ -1,14 +1,38 @@
 ###NAMESPACE ADDITIONS###
-# Depends: R (>= 2.14), grDevices, graphics, stats, utils, reader (>= 1.0.1), NCmisc (>= 1.1), bigmemory (>= 4.0.0), biganalytics
-# Imports: multicore, methods, bigmemory.sri, BH, irlba
+# Depends: R (>= 3.0), grDevices, graphics, stats, utils, reader (>= 1.0.1), NCmisc (>= 1.1), bigmemory (>= 4.0.0), biganalytics
+# Imports: parallel, methods, bigmemory.sri, BH, irlba
 # Suggests:
-# importFrom(multicore, parallel, mclapply)
+# importFrom(parallel, mclapply)
 # importFrom(irlba, irlba)
 # import(methods, bigmemory.sri, BH, grDevices, graphics, stats, utils, reader, NCmisc, bigmemory, biganalytics)
 ###END NAMESPACE###
 
 
 #setMethod("print", signature=signature(x="big.matrix"), function(x,...) prv.big.matrix(x,...))
+
+# internal function for testing: 
+# use: keeper <- manage.test.files() at start of example
+# then: unlink(bigpca:::manage.test.files(FALSE,keepers)) at end of examples
+# then inspect the example output for warnings with unlink()
+manage.test.files <- function(start=TRUE,keepers=NULL) {
+  test.files <- c("testMyBig.bck","t.bigMat.bck","splitmatR1.bck","split1.bck","sel.bck","functestdn.bck","functest.bck","funclongcol.bck","t.bigMat.RData",
+    "sel.RData","functestdn.RData","fn.RData","testMyBig.dsc","t.bigMat.dsc","splitmatR1.dsc","split1.dsc","sel.dsc","functestdn_file_rowname_list_check_this.txt",
+    "functestdn.dsc","functest.dsc","funclongcol.dsc","bigrowstemp.txt","bigcolstemp.txt","test.dsc","test.bck")
+  if(start) { 
+    ii <- which(list.files() %in% test.files) 
+    if(length(ii)>0) { keepers <- list.files()[ii] }
+    return(keepers)
+  } else {
+    ii <- which(list.files() %in% test.files[!test.files %in% keepers]) 
+    if(length(ii)>0) { 
+      killers <- list.files()[ii] 
+      warning("unlink(",paste(killers,collapse=","),")")
+    } else { killers <- NULL }
+  }
+  return(killers)
+}
+
+
 
 
 #' Tidier display function for big matrix objects
@@ -34,17 +58,18 @@
 #'  with the first few rows and columns, and the last row and column
 #' @seealso get.big.matrix()
 #' @export
-#' @examples
+#' @examples 
 #' bM <- filebacked.big.matrix(20, 50,
 #'        dimnames = list(paste("r",1:20,sep=""), paste("c",1:50,sep="")),
 #'        backingfile = "test.bck",  backingpath = getwd(), descriptorfile = "test.dsc")
 #' bM[1:20,] <- replicate(50,rnorm(20))
 #' prv.big.matrix(bM)
 #' prv.big.matrix(bM,rows=10,cols=4)
+#' unlink(c("test.dsc","test.bck"))  # clean up files
 prv.big.matrix <- function(bigMat,dir="",rows=3,cols=2,name=NULL,dat=TRUE,
                            descr=NULL,bck=NULL,mem=FALSE,rcap="",ccap="",...) {
   # print summary of big matrix contents
-  must.use.package("bigmemory")
+  #must.use.package("bigmemory")
   if(is.null(name) & is.character(bigMat)) { name <- basename(bigMat[1]) } # if it's a file name
   bigMat <- get.big.matrix(bigMat,dir=dir)
   if(!is.null(name)) { 
@@ -441,11 +466,11 @@ quick.elbow <- function(varpc,low=.08,max.pc=.9) {
 #' prv.big.matrix(bM)
 #' # compare native bigmemory column-wise function to multicore [native probably faster]
 #' v1 <- colsd(bM) # native bigmemory function
-#' v2 <- bmcapply(bM,2,sd,n.cores=10) # use up to 10 cores if available
+#' v2 <- bmcapply(bM,2,sd,n.cores=2) # use up to 2 cores if available
 #' print(all.equal(v1,v2))
 #' # compare row-means approaches
 #' v1 <- rowMeans(as.matrix(bM))
-#' v2 <- bmcapply(bM,1,mean,n.cores=5)
+#' v2 <- bmcapply(bM,1,mean,n.cores=2) # use up to 2 cores if available
 #' v3 <- bmcapply(bM,1,rowMeans,use.apply=FALSE)
 #' print(all.equal(v1,v2)); print(all.equal(v2,v3))
 #' # example using a custom combine function; taking the mean of column means
@@ -459,8 +484,9 @@ quick.elbow <- function(varpc,low=.08,max.pc=.9) {
 #' test.size <- 5 # try increasing this number, or use more intensive function than sd()
 #' # to test relative speed for larger matrices
 #' M <- matrix(runif(10^test.size),ncol=10^(test.size-2)) # normal matrix
-#' system.time(bmcapply(M,2,sd,n.cores=10)) # use up to 10 cores if available
+#' system.time(bmcapply(M,2,sd,n.cores=2)) # use up to 2 cores if available
 #' system.time(apply(M,2,sd)) # 
+#' unlink(c("test.bck","test.dsc"))
 bmcapply <- function(bigMat,MARGIN,FUN,dir=NULL,by=200,n.cores=1,
                      use.apply=TRUE,convert=!use.apply,combine.fn=NULL,...) {
   # multicore way of calculating a function (e.g, dlrs) for a big.matrix,
@@ -473,7 +499,7 @@ bmcapply <- function(bigMat,MARGIN,FUN,dir=NULL,by=200,n.cores=1,
   if(!is.function(FUN)) { stop("FUN must be a function") }
   if(!is.numeric(by)) { by <- 200 } else { by <- round(by) }
   bycol <- as.logical(as.numeric(MARGIN[1])-1)
-  must.use.package("multicore")
+  #must.use.package("multicore")
   if(is.null(dim(bigMat))) { stop("this function only works on matrix objects") }
   if(length(dim(bigMat))!=2) { stop("this function only works on matrix objects") }
   if(bycol) { tot.main <- ncol(bigMat) } else { tot.main <- nrow(bigMat)}
@@ -512,7 +538,7 @@ bmcapply <- function(bigMat,MARGIN,FUN,dir=NULL,by=200,n.cores=1,
   ## run function as mclapply()
   if(split.to>=1) {
     #print("z1")
-    result.list <- multicore::mclapply(1:split.to, FUN=big.fnc, func=FUN, stepz=stepz, 
+    result.list <- parallel::mclapply(1:split.to, FUN=big.fnc, func=FUN, stepz=stepz, 
                                        bigMat=bigMat, dir=dir, bycol=bycol, mc.cores=n.cores,...)
     #print("z2")
     if(is.function(combine.fn)) {
@@ -675,7 +701,7 @@ svn.bigalgebra.install <- function(verbose=FALSE) {
 #'  this should load or install the bigalgebra package,
 #'  else will return instructions on what to do next to fix the issue 
 #' @export
-#' @examples
+#' @examples 
 #' # not run # big.algebra.install.help(TRUE)
 big.algebra.install.help <- function(verbose=FALSE) {
   ## bigalgebra package doesn't install easily using the regular R way of installing packages
@@ -719,7 +745,7 @@ big.algebra.install.help <- function(verbose=FALSE) {
 #' @param verbose whether to display information on method being used, or minor warnings
 #' @return Returns a big.matrix object, regardless of what method was used as reference/input
 #' @export
-#' @examples
+#' @examples 
 #' # set up a toy example of a big.matrix 
 #' bM <- filebacked.big.matrix(20, 50,
 #'        dimnames = list(paste("r",1:20,sep=""), paste("c",1:50,sep="")),
@@ -737,6 +763,7 @@ big.algebra.install.help <- function(verbose=FALSE) {
 #' prv.big.matrix(bM2)
 #' prv.big.matrix(bM3)
 #' prv.big.matrix(bM4)
+#' unlink(c("fn.RData","test.bck","test.dsc"))
 get.big.matrix <- function(fn,dir="",verbose=FALSE)
 {
   # loads a big.matrix either using an big.matrix description object
@@ -950,10 +977,11 @@ check.text.matrix.format <- function(fn,ncol=NA,header=NULL,row.names=NULL,sep="
 #' @return Returns a random matrix of data for testing/simulation, can be a data.frame or big.matrix if those options are selected
 #' @export
 #' @author Nicholas Cooper 
-#' @examples
+#' @examples 
 #' mat <- (generate.test.matrix(5)); prv(mat)
 #' lst <- (generate.test.matrix(5,3,big.matrix=TRUE,file.name="bigtest"))
-#' mat <- lst[[1]]; prv(mat); headl(lst[2:3]); unlink(unlist(lst[2:3]))
+#' mat <- lst[[1]]; prv(mat); headl(lst[2:3]); 
+#' unlink(unlist(lst[2:3]))
 generate.test.matrix <- function(size=5,row.exp=2,rand=rnorm,dimnames=TRUE,
                                  data.frame=FALSE,big.matrix=FALSE,file.name=NULL, 
                                  tracker=TRUE) {
@@ -1089,7 +1117,7 @@ dir.force.slash <- function(dir) {
 #' @return Returns a big.matrix containing the data imported (single big.matrix even
 #'  when text input is split across multiple files)
 #' @export
-#' @examples
+#' @examples 
 #' # Collate all file names to use in this example #
 #' all.fn <- c("rownames.txt","colnames.txt","functestdn.txt","funclongcol.txt","functest.txt",
 #'  paste("rn",1:3,".txt",sep=""),paste("cn",1:3,".txt",sep=""),
@@ -1182,6 +1210,10 @@ dir.force.slash <- function(dir) {
 #' 
 #' # DELETE ALL FILES ##
 #' unlink(all.fn[!any.already]) # prevent deleting user's files
+#' ## many files to clean up! ##
+#' unlink(c("funclongcol.bck","funclongcol.dsc","functest.bck","functest.dsc",
+#'  "functestdn.RData","functestdn.bck","functestdn.dsc","functestdn_file_rowname_list_check_this.txt",
+#'  "split1.bck","split1.dsc","splitmatR1.bck","splitmatR1.dsc"))
 import.big.data <- function(input.fn=NULL, dir=getwd(), long=FALSE, rows.fn=NULL, cols.fn=NULL, 
                               pref="", delete.existing=TRUE, ret.obj=FALSE, verbose=TRUE, row.names=NULL, col.names=NULL,
                               dat.type="double", ram.gb=2, hd.gb=1000, tracker=TRUE)
@@ -1629,7 +1661,7 @@ select.col.row.custom <- function(bigMat,row,col,verbose=T)
 #' @export
 #' @seealso uniform.select, subpc.select, subcor.select, select.least.assoc, big.select, get.big.matrix
 #' @author Nicholas Cooper 
-#' @examples
+#' @examples 
 #' bmat <- generate.test.matrix(5,big.matrix=TRUE)
 #' prv.big.matrix(bmat)
 #' # make 5% random selection:
@@ -1719,7 +1751,7 @@ thin <- function(bigMat,keep=0.05,how=c("uniform","correlation","pca","associati
 #' @return A big.matrix with the selected (in order) rows and columns specified
 #' @export
 #' @author Nicholas Cooper 
-#' @examples
+#' @examples 
 #' bmat <- generate.test.matrix(5,big.matrix=TRUE)
 #' # take a subset of the big.matrix without using deepcopy
 #' sel <- big.select(bmat,c(1,2,8),c(2:10),deepC=FALSE,verbose=TRUE)
@@ -1729,6 +1761,7 @@ thin <- function(bigMat,keep=0.05,how=c("uniform","correlation","pca","associati
 #' writeLines(colnames(bmat)[c(2:10)],con="bigcolstemp.txt")
 #' sel <- big.select(bmat, "bigrowstemp.txt","bigcolstemp.txt", delete.existing=TRUE)
 #' prv.big.matrix(sel)
+#' unlink(c("bigcolstemp.txt","bigrowstemp.txt","sel.RData","sel.bck","sel.dsc"))
 big.select <- function(bigMat, select.rows=NULL, select.cols=NULL, dir=getwd(), 
                        deepC=TRUE, pref="sel", delete.existing=FALSE, verbose=FALSE)
 {
@@ -1857,7 +1890,7 @@ big.select <- function(bigMat, select.rows=NULL, select.cols=NULL, dir=getwd(),
 #' @export
 #' @seealso thin, uniform.select, big.PCA, get.big.matrix
 #' @author Nicholas Cooper 
-#' @examples
+#' @examples 
 #' mat <- matrix(rnorm(200*2000),ncol=200) # normal matrix
 #' bmat <- as.big.matrix(mat)              # big matrix
 #' ii <- subpc.select(bmat,.05,rows=TRUE) # thin down to 5% of the rows
@@ -1970,7 +2003,7 @@ subpc.select <- function(bigMat,keep=.05,rows=TRUE,dir=getwd(),random=TRUE,ram.g
 #' @export
 #' @seealso thin, uniform.select, get.big.matrix
 #' @author Nicholas Cooper 
-#' @examples
+#' @examples 
 #' mat <- matrix(rnorm(200*2000),ncol=200)
 #' bmat <- as.big.matrix(mat)
 #' ii1 <- subcor.select(bmat,.05,rows=TRUE) # thin down to 5% of the rows
@@ -2051,7 +2084,7 @@ subcor.select <- function(bigMat,keep=.05,rows=TRUE,hi.cor=TRUE,dir=getwd(),rand
 #' @export
 #' @seealso subpc.select
 #' @author Nicholas Cooper 
-#' @examples
+#' @examples 
 #' mat <- matrix(rnorm(200*100),ncol=200)  # standard matrix
 #' bmat <- as.big.matrix(mat)              # big.matrix
 #' ii1 <- uniform.select(bmat,.05,rows=TRUE) # thin down to 5% of the rows
@@ -2109,7 +2142,7 @@ uniform.select <- function(bigMat,keep=.05,rows=TRUE,dir="",random=TRUE,ram.gb=0
 #' @export
 #' @seealso get.big.matrix
 #' @author Nicholas Cooper 
-#' @examples
+#' @examples 
 #' bmat <- generate.test.matrix(5,big.matrix=TRUE)
 #' pheno <- rep(1,ncol(bmat)); pheno[which(runif(ncol(bmat))<.5)] <- 2
 #' ids <- colnames(bmat); samp.inf <- data.frame(phenotype=pheno); rownames(samp.inf) <- ids
@@ -2241,7 +2274,7 @@ quick.pheno.assocs <- function(bigMat,sample.info=NULL,use.col="phenotype",dir="
 #' @export
 #' @seealso quick.pheno.assocs
 #' @author Nicholas Cooper 
-#' @examples
+#' @examples 
 #' bmat <- generate.test.matrix(5,big.matrix=TRUE)
 #' pheno <- rep(1,ncol(bmat)); pheno[which(runif(ncol(bmat))<.5)] <- 2
 #' most.correl <- select.least.assoc(bmat,phenotype=pheno,least=FALSE)
@@ -2340,7 +2373,7 @@ cut.fac <- function(N,n.grps,start.zero=FALSE,factor=TRUE) {
 #' @export
 #' @seealso get.big.matrix, PC.correct
 #' @author Nicholas Cooper
-#' @examples
+#' @examples 
 ## PRELIMINARY EXAMPLES: demonstration of PCA versus SVD ##
 #' # create an example matrix and its transpose
 #' min.dim <- 200; nvar <- 500; subset.size <- 50
@@ -2404,6 +2437,7 @@ cut.fac <- function(N,n.grps,start.zero=FALSE,factor=TRUE) {
 #' lines(cors.pced.with.orig,col="lightgreen")
 #' # can see that the first component is highly preserved,
 #' # and next components, somewhat preserved; try using different thinning methods
+#' unlink(c("testMyBig.bck","testMyBig.dsc"))
 big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FALSE,center=TRUE,
                     save.pcs=FALSE,use.bigalgebra=TRUE,pcs.fn="PCsEVsFromPCA.RData",
                     verbose=FALSE,...) 
@@ -2550,7 +2584,7 @@ big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FA
 #' @export
 #' @seealso big.pca
 #' @author Nicholas Cooper 
-#' @examples
+#' @examples 
 #' mat2 <- sim.cor(500,200,genr=function(n){ (runif(n)/2+.5) })
 #' bmat2 <- as.big.matrix(mat2,backingfile="testMyBig.bck",descriptorfile="testMyBig.dsc")
 #' # calculate PCA 
@@ -2559,6 +2593,7 @@ big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FA
 #' # corrected <- PC.correct(result2,bmat2)
 #' # corrected2 <- PC.correct(result2,bmat2,n.cores=2)
 #' # all.equal(corrected,corrected2)
+#' unlink(c("testMyBig.bck","testMyBig.dsc"))
 PC.correct <- function(pca.result,bigMat,dir=getwd(),num.pcs=9,n.cores=1,pref="corrected",
                             big.cor.fn=NULL,write=FALSE,sample.info=NULL,correct.sex=FALSE,
                             add.int=FALSE,tracker=TRUE)
@@ -2737,7 +2772,7 @@ PC.correct <- function(pca.result,bigMat,dir=getwd(),num.pcs=9,n.cores=1,pref="c
 #'  'bigMat'; if T, then anything that works with get.big.matrix(bigMat,dir) is acceptable
 #' @return A big.matrix that is the transpose (rows and columns switched) of the original matrix
 #' @export
-#' @examples
+#' @examples 
 #' bM <- filebacked.big.matrix(200, 500,
 #'        dimnames = list(paste("r",1:200,sep=""), paste("c",1:500,sep="")),
 #'        backingfile = "test.bck",  backingpath = getwd(), descriptorfile = "test.dsc")
@@ -2745,6 +2780,7 @@ PC.correct <- function(pca.result,bigMat,dir=getwd(),num.pcs=9,n.cores=1,pref="c
 #' prv.big.matrix(bM)
 #' tbM <- big.t(bM,verbose=TRUE)
 #' prv.big.matrix(tbM)
+#' unlink(c("t.bigMat.RData","t.bigMat.bck","t.bigMat.dsc","test.bck","test.dsc"))
 big.t <- function(bigMat,dir=NULL,name="t.bigMat",R.descr=NULL,max.gb=NA,
                   verbose=F,tracker=NA,file.ok=T) {
   #this can be slow!
@@ -2864,7 +2900,7 @@ PC.fn.mat.multi <- function(nextrows,nPCs,mc.cores=1,add.int=F)
   col.sel <- 1:ncol(nextrows)
   nextrows <- lapply(seq_len(nrow(nextrows)), function(i) nextrows[i,]) # multi slows this down
   #nextrows <- multicore::mclapply(nextrows,PC.fn,nPCs=nPCs,col.sel=col.sel,mc.cores=mc.cores)
-  nextrows <- multicore::mclapply(nextrows,PC.fn.2,nPCs=nPCs,col.sel=col.sel,mc.cores=mc.cores, add.int=add.int)
+  nextrows <- parallel::mclapply(nextrows,PC.fn.2,nPCs=nPCs,col.sel=col.sel,mc.cores=mc.cores, add.int=add.int)
   nextrows <- do.call("rbind",nextrows)
   return(nextrows)
 }
