@@ -1,10 +1,10 @@
 ###NAMESPACE ADDITIONS###
 # Depends: R (>= 3.0), grDevices, graphics, stats, utils, reader (>= 1.0.1), NCmisc (>= 1.1), bigmemory (>= 4.0.0), biganalytics
-# Imports: parallel, methods, bigmemory.sri, BH, irlba
+# Imports: parallel, methods, bigmemory.sri, irlba
 # Suggests:
 # importFrom(parallel, mclapply)
 # importFrom(irlba, irlba)
-# import(methods, bigmemory.sri, BH, grDevices, graphics, stats, utils, reader, NCmisc, bigmemory, biganalytics)
+# import(methods, bigmemory.sri, grDevices, graphics, stats, utils, reader, NCmisc, bigmemory, biganalytics)
 ###END NAMESPACE###
 
 
@@ -55,7 +55,9 @@ manage.test.files <- function(start=TRUE,keepers=NULL) {
 #' @param ccap character, caption to display for the columns
 #' @param ... additional arguments to prv.large (from NCmisc) which displays the end result
 #' @return Prints to console a compact representation of the bigMat matrix, 
-#'  with the first few rows and columns, and the last row and column
+#'  with the first few rows and columns, and the last row and column. Note that sometimes
+#'  the initial printing of a big.matrix can take a little while. But subsequently the printout
+#'  should be almost instantaneous.
 #' @seealso get.big.matrix()
 #' @export
 #' @examples 
@@ -2131,14 +2133,17 @@ uniform.select <- function(bigMat,keep=.05,rows=TRUE,dir="",random=TRUE,ram.gb=0
 #'  variable to perform the association test for phenotype, etc. This file may contain extra
 #'  ids not in colnames(bigMat), although if any column names of bigMat are missing from
 #'  sample.info a warning will be given, and the call is likely to give incorrect results.
-#' @param use.col the name of the categorical phenotype column in the data.frame 'sample.info'
+#' @param use.col the name of the phenotype column in the data.frame 'sample.info'
 #' @param p.values logical, whether to return p.values from the associations 
 #' @param F.values logical, whether to return F.values from the associations
 #' @param n.cores integer, if wanting to process the analysis using multiple cores, specify the number
 #' @return Depending on options selected returns either a list of F values and p values, or just F, or just p-values
 #'  for association with each variable in the big.matrix.
 #' @param verbose logical, whether to display additional output on progress
-#' @return if both F.values and p.values are TRUE, returns dataframe of both statistics for each variable, else a vector
+#' @return If both F.values and p.values are TRUE, returns dataframe of both statistics for each variable, else a vector.
+#' If the phenotype has 20 more or more unique categories, it will be assumed to be continuous and the association
+#' test applied will be correlation. If there are two categories a t-test will be used, and 3 to 19 categories, an ANOVA#
+#' will be used. Regardless of the analysis function, output will be converted to an F statistic and/or associated p-values.
 #' @export
 #' @seealso get.big.matrix
 #' @author Nicholas Cooper 
@@ -2170,7 +2175,7 @@ quick.pheno.assocs <- function(bigMat,sample.info=NULL,use.col="phenotype",dir="
   if(length(cutt)>0) {  sample.info <- sample.info[-cutt,,drop=F]  }
   if(ncol(bigMat)!=nrow(sample.info)) { 
     n.mis <- length(which(colnames(bigMat) %in% rownames(sample.info)))
-    warning(n.mis," samples in BigMat were not in sample.info [failure likely]")
+    warning(n.mis," samples in BigMat were found in sample.info [failure likely]")
   }
   ## determine test to use based on number of phenotypes ##
   n.phenos <- length(table(sample.info[[paste(use.col)]],useNA=NULL))
@@ -2179,13 +2184,15 @@ quick.pheno.assocs <- function(bigMat,sample.info=NULL,use.col="phenotype",dir="
   t.type <- "single"
   if(n.phenos==2) { t.type <- "t.test"}
   if(n.phenos>2) { t.type <- "anova"}
+  if(n.phenos>19) { t.type <- "cor" }
   if(verbose) {
     cat(" found ",n.phenos," ",use.col,"s, ",t.type," will be used to summarise rows most associated with ",use.col,"\n\n",sep="")
   }
   three.test <- function(col,pheno) { return(summary(aov(col~pheno))[[1]][["F value"]][1]) }
   two.test <- function(col,pheno) { return((cor.test(col,pheno)$statistic)^2)  }
-  ph.test <- switch(t.type,anova=three.test,t.test=two.test,single=NULL)
-  if(is.null(ph.test)) { stop("Error: used option for association test by ",use.col," but there is only 1 type in file")}
+  ph.test <- switch(t.type,anova=three.test,t.test=two.test,cor=two.test,single=NULL)
+  deg.fr <- switch(t.type,anova=n.phenos-1,t.test=1,cor=1,single=NULL)
+  if(is.null(ph.test)) { stop("Error: used option for association test by ",use.col," but there is only 1 phenotype in file")}
   row.labels <- rownames(bigMat)
   full.size <- length(row.labels)
   good.mem.lim <- 10^7 # allows fast processing at this limit
@@ -2229,7 +2236,7 @@ quick.pheno.assocs <- function(bigMat,sample.info=NULL,use.col="phenotype",dir="
   p.from.f <- function(FF,k,n) {  pf(FF, k, n,lower.tail = FALSE) }
   # pvalues <- sapply(Fvalues^.5,p.from.t,df=tot.samps-1)
   if(is.numeric(Fvalues)) {
-    pvalues <- sapply(Fvalues,p.from.f,k=n.phenos,n=round(tot.samps/n.phenos))
+    pvalues <- sapply(Fvalues,p.from.f,k=deg.fr,n=(tot.samps-1))
     if(p.values) { out <- pvalues } else { out <- Fvalues }
     if(verbose) {
       cat("\nSummary of",if(p.values & !F.values) { "p-value" } else { "F" },"statistics returned:\n"); print(summary(out)); cat("\n")
