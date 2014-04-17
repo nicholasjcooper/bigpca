@@ -2584,9 +2584,12 @@ big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FA
 #'  a dataframe containing the sex of each sample, with sample names as rownames
 #' @param correct.sex if sample.info is a dataframe containing a column named 'gender' or 'sex'
 #'  (case insensitive), then add a sex covariate to the PC correction linear model
-#' @param add.int whether to maintain the pre-corrected means of each variable, i.e, post-correction
-#'  add the mean back onto the residuals which will have mean zero for each variable.
+#' @param add.int logical, whether to maintain the pre-corrected means of each variable, i.e, post-correction
+#'  add the mean back onto the residuals which will otherwise have mean zero for each variable.
+#' @param preserve.median logical, if add.int=TRUE, then setting this parameter to TRUE will preserve
+#'  the median of the original data, instead of the mean. This is because after PC-correction the skew may change.
 #' @param tracker logical, whether to display a progress bar
+#' @param verbose logical, whether to display preview of pre- and post- corrected matrix
 #' @return A big.matrix of the same dimensions as original, corrected for n PCs and an optional covariate (sex)
 #' @export
 #' @seealso big.pca
@@ -2594,16 +2597,16 @@ big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FA
 #' @examples 
 #' mat2 <- sim.cor(500,200,genr=function(n){ (runif(n)/2+.5) })
 #' bmat2 <- as.big.matrix(mat2,backingfile="testMyBig.bck",descriptorfile="testMyBig.dsc")
-#' # calculate PCA 
-#' packages.loaded()
+#' ## calculate PCA ##
 #' # result2 <- big.PCA(bmat2,thin=FALSE)
 #' # corrected <- PC.correct(result2,bmat2)
 #' # corrected2 <- PC.correct(result2,bmat2,n.cores=2)
-#' # all.equal(corrected,corrected2)
+#' # c1 <- get.big.matrix(corrected) ; c2 <- get.big.matrix(corrected2)
+#' # all.equal(as.matrix(c1),as.matrix(c2))
 #' unlink(c("testMyBig.bck","testMyBig.dsc"))
 PC.correct <- function(pca.result,bigMat,dir=getwd(),num.pcs=9,n.cores=1,pref="corrected",
                             big.cor.fn=NULL,write=FALSE,sample.info=NULL,correct.sex=FALSE,
-                            add.int=FALSE,tracker=TRUE)
+                            add.int=FALSE,preserve.median=FALSE, tracker=TRUE,verbose=TRUE)
 {
   ## using results of a PCA analysis, run correction for 'num.pcs' PCs on a dataset
   # uncorrected matrix
@@ -2616,8 +2619,10 @@ PC.correct <- function(pca.result,bigMat,dir=getwd(),num.pcs=9,n.cores=1,pref="c
     dir <- list(big=dir,pc=dir)
   }
   origMat <- get.big.matrix(bigMat,dir)
-  cat("\nRunning Principle Components correction (PC-correction), using LRR-dataset:\n")
-  prv.big.matrix(origMat,name="origMat")
+  if(verbose) {
+    cat("\nRunning Principle Components correction (PC-correction), using LRR-dataset:\n")
+    prv.big.matrix(origMat,name="origMat")
+  }
   if(n.cores>1) { multi <- T } else { multi <- F }
   # get filenames now to add to result later
   rN <- rownames(origMat); cN <- colnames(origMat)
@@ -2651,7 +2656,7 @@ PC.correct <- function(pca.result,bigMat,dir=getwd(),num.pcs=9,n.cores=1,pref="c
   }
   # create new matrix same size, ready for corrected values
   nR <- nrow(origMat); nC <- ncol(origMat)
-  cat(" creating new file backed big.matrix to store corrected data...")
+  if(verbose) { cat(" creating new file backed big.matrix to store corrected data...") }
   pcCorMat <- filebacked.big.matrix(nR,nC, backingfile=paste(pref,"bck",sep="."),
                                     backingpath=dir$big, descriptorfile=paste(pref,"dsc",sep="."))
   cat("done\n")
@@ -2703,10 +2708,10 @@ PC.correct <- function(pca.result,bigMat,dir=getwd(),num.pcs=9,n.cores=1,pref="c
     # next.rows is now a pointer to a matrix subset, must use 'as.matrix' to coerce to a regular R object 
     if(multi) {
       #pcCorMat[x1:x2,] <- PC.fn.mat.multi(next.rows[1:nrow(next.rows),1:ncol(next.rows)],nPCs,mc.cores=n.cores,add.int=add.int)
-      pcCorMat[x1:x2,] <- PC.fn.mat.multi(bigmemory::as.matrix(next.rows),nPCs,mc.cores=n.cores,add.int=add.int)
+      pcCorMat[x1:x2,] <- PC.fn.mat.multi(bigmemory::as.matrix(next.rows),nPCs,mc.cores=n.cores,add.int=add.int, pm=preserve.median)
     } else {
       #pcCorMat[x1:x2,] <- PC.fn.mat.apply(next.rows[1:nrow(next.rows),1:ncol(next.rows)],nPCs,add.int=add.int)
-      pcCorMat[x1:x2,] <- PC.fn.mat.apply(bigmemory::as.matrix(next.rows),nPCs,add.int=add.int)
+      pcCorMat[x1:x2,] <- PC.fn.mat.apply(bigmemory::as.matrix(next.rows),nPCs,add.int=add.int, pm=preserve.median)
     }
     if(tracker) { loop.tracker(dd,split.to) }
     ## Every 'flush.freq' iterations clean up the memory, remove the 
@@ -2727,11 +2732,13 @@ PC.correct <- function(pca.result,bigMat,dir=getwd(),num.pcs=9,n.cores=1,pref="c
   options(bigmemory.allow.dimnames=TRUE)
   rownames(pcCorMat) <- rN;  colnames(pcCorMat) <- cN 
   ll <- proc.time()
-  cat(paste(" LRR PC-Correction took",round((ll-jj)[3]/3600,3),"hours\n"))
+  time.taken <- round((ll-jj)[3]/3600,3)
+  if(time.taken>1/180) {  cat(paste(" LRR PC-Correction took",,"hours\n")) }
   bigmemory::flush(pcCorMat) # should allow names to take  
-  cat("\nPC-corrected dataset produced:\n")
-  prv.big.matrix(pcCorMat,name="pcCorMat")
-  
+  if(verbose) {
+    cat("\nPC-corrected dataset produced:\n")
+    prv.big.matrix(pcCorMat,name="pcCorMat")
+  }  
   mat.ref <- describe(pcCorMat)
   if(write) {
     if(is.null(big.cor.fn) | !is.character(big.cor.fn)) {
@@ -2874,32 +2881,34 @@ big.t <- function(bigMat,dir=NULL,name="t.bigMat",R.descr=NULL,max.gb=NA,
 
 ### INTERNAL FUNCTIONS ###
 #' Internal
-PC.fn.mat <- function(next.rows,nPCs,add.int=F)
+#' pm is 'preserve.median'
+PC.fn.mat <- function(next.rows, nPCs, add.int=FALSE, pm=FALSE)
 {
   # matrix version of PC.fn (used to PC-correct one SNP at a time)
   col.sel <- 1:ncol(next.rows)
   for (dd in 1:nrow(next.rows)) {
     # compiled PC.fn should speed up these ops a little
-    next.rows[dd,] <- PC.fn(next.rows[dd,],nPCs,col.sel,add.int=add.int) 
+    next.rows[dd,] <- PC.fn(next.rows[dd,],nPCs,col.sel,add.int=add.int,pm=pm) 
   }  
   return(next.rows)
 }
 
 
 #' Internal
-PC.fn.mat.apply <- function(nextrows,nPCs,add.int=F)
+#' pm is 'preserve.median'
+PC.fn.mat.apply <- function(nextrows, nPCs, add.int=F, pm=FALSE)
 {
   # matrix version of PC.fn (used to PC-correct one SNP at a time), vectorized version
   # testing shows the for-loop (non-vectorized) to be slightly faster, maybe because of t()
   # when using PC.fn.2 must pass in vec of 1's if you want the intecept
   col.sel <- 1:ncol(nextrows)
-  nextrows <- t(apply(nextrows,1,PC.fn.2,nPCs=nPCs,col.sel=col.sel,add.int=add.int))
+  nextrows <- t(apply(nextrows,1,PC.fn.2,nPCs=nPCs,col.sel=col.sel,add.int=add.int,pm=pm))
   return(nextrows)
 }
 
 
 #' Internal
-PC.fn.mat.multi <- function(nextrows,nPCs,mc.cores=1,add.int=F)
+PC.fn.mat.multi <- function(nextrows, nPCs, mc.cores=1, add.int=F, pm=FALSE)
 {
   # matrix version of PC.fn (used to PC-correct one SNP at a time), vectorized version
   # testing shows the for-loop (non-vectorized) to be slightly faster, maybe because of t()
@@ -2907,26 +2916,69 @@ PC.fn.mat.multi <- function(nextrows,nPCs,mc.cores=1,add.int=F)
   col.sel <- 1:ncol(nextrows)
   nextrows <- lapply(seq_len(nrow(nextrows)), function(i) nextrows[i,]) # multi slows this down
   #nextrows <- multicore::mclapply(nextrows,PC.fn,nPCs=nPCs,col.sel=col.sel,mc.cores=mc.cores)
-  nextrows <- parallel::mclapply(nextrows,PC.fn.2,nPCs=nPCs,col.sel=col.sel,mc.cores=mc.cores, add.int=add.int)
+  nextrows <- parallel::mclapply(nextrows,PC.fn.2,nPCs=nPCs,col.sel=col.sel,mc.cores=mc.cores, add.int=add.int, pm=pm)
   nextrows <- do.call("rbind",nextrows)
   return(nextrows)
 }
 
 
 #' Internal
-PC.fn <- function(next.row,nPCs,col.sel,add.int=F)
+PC.fn.previous <- function(next.row, nPCs, col.sel, add.int=F)
 {
   # apply PC correction for a single SNP, allowing for missing data.
   bad1 <- which(is.na(next.row))
   if(length(bad1)>0) { sel <- -bad1 } else { sel <- col.sel }
-  if(add.int) { int <- mean(next.row[sel]) } else { int <- 0 }
+  if(add.int) {  int <- mean(next.row[sel]) } else { int <- 0 }
   next.row[sel] <- lm(next.row ~ nPCs,na.action="na.exclude")$residuals + int
+  return(next.row)
+}
+
+PC.fn <- function(next.row, nPCs, col.sel, add.int=F, pm=FALSE)
+{
+  # apply PC correction for a single SNP, allowing for missing data.
+  bad1 <- which(is.na(next.row))
+  if(length(bad1)>0) { sel <- -bad1 } else { sel <- col.sel }
+  if(add.int) { 
+    if(pm) { 
+      int <- median(next.row[sel])
+      next.row[sel] <- lm(next.row ~ nPCs,na.action="na.exclude")$residuals
+      next.row[sel] <- next.row[sel] - median(next.row[sel]) + int
+    } else { 
+      int <- mean(next.row[sel]) 
+      next.row[sel] <- lm(next.row ~ nPCs,na.action="na.exclude")$residuals + int
+    }
+  } else { 
+    next.row[sel] <- lm(next.row ~ nPCs,na.action="na.exclude")$residuals
+  }
   return(next.row)
 }
 
 
 #' Internal
-PC.fn.2 <- function(next.row,nPCs,col.sel, add.int=F)
+PC.fn.2 <- function(next.row, nPCs, col.sel, add.int=F, pm=FALSE)
+{
+  # apply PC correction for a single SNP, allowing for missing data.
+  # when using PC.fn.2 must pass in vec of 1's if you want the intecept
+  bad1 <- which(is.na(next.row))
+  if(length(bad1)>0) { sel <- -bad1 } else { sel <- col.sel }
+  if(add.int) { 
+    if(pm) { 
+      int <- median(next.row[sel])
+      next.row[sel] <- lm.fit(x=nPCs[sel,],y=next.row[sel])$residuals
+      next.row[sel] <- next.row[sel] - median(next.row[sel]) + int
+    } else { 
+      int <- mean(next.row[sel]) 
+      next.row[sel] <- lm.fit(x=nPCs[sel,],y=next.row[sel])$residuals + int
+    }
+  } else { 
+    next.row[sel] <- lm.fit(x=nPCs[sel,],y=next.row[sel])$residuals
+  }
+  return(next.row)
+}
+
+
+#' Internal
+PC.fn.2.previous <- function(next.row, nPCs, col.sel, add.int=F, pm=FALSE)
 {
   # apply PC correction for a single SNP, allowing for missing data.
   # when using PC.fn.2 must pass in vec of 1's if you want the intecept
