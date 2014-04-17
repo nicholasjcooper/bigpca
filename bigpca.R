@@ -2733,7 +2733,7 @@ PC.correct <- function(pca.result,bigMat,dir=getwd(),num.pcs=9,n.cores=1,pref="c
   rownames(pcCorMat) <- rN;  colnames(pcCorMat) <- cN 
   ll <- proc.time()
   time.taken <- round((ll-jj)[3]/3600,3)
-  if(time.taken>1/180) {  cat(paste(" LRR PC-Correction took",,"hours\n")) }
+  if(time.taken>1/180) {  cat(paste(" PC-Correction took",time.taken,"hours\n")) }
   bigmemory::flush(pcCorMat) # should allow names to take  
   if(verbose) {
     cat("\nPC-corrected dataset produced:\n")
