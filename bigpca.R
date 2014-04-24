@@ -2144,6 +2144,8 @@ uniform.select <- function(bigMat,keep=.05,rows=TRUE,dir="",random=TRUE,ram.gb=0
 #' If the phenotype has 20 more or more unique categories, it will be assumed to be continuous and the association
 #' test applied will be correlation. If there are two categories a t-test will be used, and 3 to 19 categories, an ANOVA#
 #' will be used. Regardless of the analysis function, output will be converted to an F statistic and/or associated p-values.
+#' Except if p.values and F.values are both set to false and the phenotype is continuous, then pearsons correlation values
+#' will be returned
 #' @export
 #' @seealso get.big.matrix
 #' @author Nicholas Cooper 
@@ -2184,13 +2186,14 @@ quick.pheno.assocs <- function(bigMat,sample.info=NULL,use.col="phenotype",dir="
   t.type <- "single"
   if(n.phenos==2) { t.type <- "t.test"}
   if(n.phenos>2) { t.type <- "anova"}
-  if(n.phenos>19) { t.type <- "cor" }
+  if(n.phenos>19) { t.type <- "cor"; if(!p.values & !F.values) { t.type <- "cor2"; F.values <- T } }
   if(verbose) {
     cat(" found ",n.phenos," ",use.col,"s, ",t.type," will be used to summarise rows most associated with ",use.col,"\n\n",sep="")
   }
   three.test <- function(col,pheno) { return(summary(aov(col~pheno))[[1]][["F value"]][1]) }
   two.test <- function(col,pheno) { return((cor.test(col,pheno)$statistic)^2)  }
-  ph.test <- switch(t.type,anova=three.test,t.test=two.test,cor=two.test,single=NULL)
+  cnt.test <- function(col,pheno) { return(cor(col,pheno))  }
+  ph.test <- switch(t.type,anova=three.test,t.test=two.test,cor=two.test,cor2=cnt.test,single=NULL)
   deg.fr <- switch(t.type,anova=n.phenos-1,t.test=1,cor=1,single=NULL)
   if(is.null(ph.test)) { stop("Error: used option for association test by ",use.col," but there is only 1 phenotype in file")}
   row.labels <- rownames(bigMat)
@@ -2236,8 +2239,10 @@ quick.pheno.assocs <- function(bigMat,sample.info=NULL,use.col="phenotype",dir="
   p.from.f <- function(FF,k,n) {  pf(FF, k, n,lower.tail = FALSE) }
   # pvalues <- sapply(Fvalues^.5,p.from.t,df=tot.samps-1)
   if(is.numeric(Fvalues)) {
-    pvalues <- sapply(Fvalues,p.from.f,k=deg.fr,n=(tot.samps-1))
-    if(p.values) { out <- pvalues } else { out <- Fvalues }
+    if(p.values) { 
+      pvalues <- sapply(Fvalues,p.from.f,k=deg.fr,n=(tot.samps-1))
+      out <- pvalues 
+    } else { out <- Fvalues }
     if(verbose) {
       cat("\nSummary of",if(p.values & !F.values) { "p-value" } else { "F" },"statistics returned:\n"); print(summary(out)); cat("\n")
     }
