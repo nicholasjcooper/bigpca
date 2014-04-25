@@ -2192,7 +2192,7 @@ quick.pheno.assocs <- function(bigMat,sample.info=NULL,use.col="phenotype",dir="
   }
   three.test <- function(col,pheno) { return(summary(aov(col~pheno))[[1]][["F value"]][1]) }
   two.test <- function(col,pheno) { return((cor.test(col,pheno)$statistic)^2)  }
-  cnt.test <- function(col,pheno) { return(cor(col,pheno))  }
+  cnt.test <- function(col,pheno) { return(cor(col,pheno,use="pairwise.complete"))  }
   ph.test <- switch(t.type,anova=three.test,t.test=two.test,cor=two.test,cor2=cnt.test,single=NULL)
   deg.fr <- switch(t.type,anova=n.phenos-1,t.test=1,cor=1,single=NULL)
   if(is.null(ph.test)) { stop("Error: used option for association test by ",use.col," but there is only 1 phenotype in file")}
