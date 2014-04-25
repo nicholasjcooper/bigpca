@@ -2210,6 +2210,11 @@ quick.pheno.assocs <- function(bigMat,sample.info=NULL,use.col="phenotype",dir="
   seg.starts <- seg.starts[!duplicated(seg.starts)]
   results <- vector("list", n.segs)
   pheno <- sample.info[[use.col]]
+  if(!is.numeric(pheno)) { 
+    pp <- pheno; pheno <- as.numeric(factor(paste(pp)))
+    warning("pheno was not numeric, so recoded:\n")
+    ii <- table(pp,pheno); cat(paste(rownames(ii),colnames(ii),sep=" ==> "),"\n")  
+  }
   test.seg <- matrix(numeric(),nrow=opt.size,ncol=tot.samps)
   # break analysis into chunks that fit in memory
   # NB: avoided parallel computing - it does not seem to add any speed here?
