@@ -1377,6 +1377,7 @@ import.big.data <- function(input.fn=NULL, dir=getwd(), long=FALSE, rows.fn=NULL
   if(pref=="") { pref <- rmv.ext(basename(input.fn))[1] }
   bck.fn <- paste(pref,"bck",sep=".")
   des.fn <- paste(pref,"dsc",sep=".")
+  rda.fn <- paste(pref,"RData",sep=".")
   ### DELETE EXISTING FILE IF HAS SAME NAME ###
   if ((!des.fn %in% list.files(dir$big)) | delete.existing )
   {
@@ -1531,6 +1532,10 @@ import.big.data <- function(input.fn=NULL, dir=getwd(), long=FALSE, rows.fn=NULL
   if(ret.obj) {
     return(describe(bigVar))
   } else {
+    # convert to RData file regardless as the old descriptor files are now very slow
+    big.des <- describe(bigVar)
+    des.fn <- cat.path(fn=des.fn,ext="RData")
+    save(big.des,file=des.fn)
     return(des.fn)
   }
   cat("...complete!\n")
@@ -2165,7 +2170,7 @@ quick.pheno.assocs <- function(bigMat,sample.info=NULL,use.col="phenotype",dir="
   # for 2 phenotypes/grps gives t values - ordinally equivalent to logistic regression with 2 groups
   if(!all(c(use.col) %in% colnames(sample.info))) { stop(paste("sample.info was invalid for association tests, need ",use.col," column")) }
   if(verbose) {
-    cat(" running row-wise tests against",use.col,"to filter most associated\n")
+    cat(" running row-wise tests against",use.col,"\n")
   }
   bigMat <- get.big.matrix(bigMat,dir)
   samp.list <- colnames(bigMat); 
@@ -2180,6 +2185,8 @@ quick.pheno.assocs <- function(bigMat,sample.info=NULL,use.col="phenotype",dir="
     warning(n.mis," samples in BigMat were found in sample.info [failure likely]")
   }
   ## determine test to use based on number of phenotypes ##
+  #print(head(sample.info)); iii34 <- sample.info[[paste(use.col)]]; prv(iii34)
+  #print(table(sample.info[[paste(use.col)]],useNA=NULL))
   n.phenos <- length(table(sample.info[[paste(use.col)]],useNA=NULL))
   #si <- table(sample.info[[paste(use.col)]],useNA=NULL)
   #prv(si,use.col,sample.info)
