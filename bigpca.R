@@ -614,8 +614,11 @@ choose.comb.fn <- function(result.list,stepz) {
 #' Attempt to install the bigalgebra package using SVN
 #'
 #' The bigalgebra package for efficient algebraic operations on big.matrix objects
-#' is not currently on CRAN, and fails a check on dependencies. Changing the 
-#' description file to add the dependency, and linking 'BH' allows the package to work.
+#' has now been submitted to CRAN, so this function is now mostly redundant.
+#' It used to require installation from SVN and some tinkering, such as changing the 
+#' description file to add the dependency, and linking 'BH' to allow the package to work.
+#' This may still be required on older versions of R that do not support the bigalgebra
+#' package uploaded to CRAN, but I cannot confirm this.
 #' This function automatically performs these corrections. First, it attempts to check-out
 #'  the latest version of bigalgebra from SVN version management system and then corrects 
 #' the description file, then tries to install the package.
@@ -685,12 +688,16 @@ svn.bigalgebra.install <- function(verbose=FALSE) {
 
 #' Attempt to install the bigalgebra package
 #'
-#' Will attempt to see whether bigalgebra is installed, then check CRAN in case it
+#' The bigalgebra package  has now been submitted to CRAN, so this function is now 
+#' mostly redundant. It may still be useful for some, and it will still work,
+#' as the first step to check CRAN, so at the risk of affecting existing code
+#' I will leave the function here for now.
+#' This function attempts to see whether bigalgebra is installed, then checks CRAN in case it 
 #' has been updated, then check RForge. Failing that, it will attempt to install
 #' using svn.bigalgebra.install(). Returns TRUE if already installed.
 #' The bigalgebra package for efficient algebraic operations on big.matrix objects
-#' is not currently on CRAN, and fails a check on dependencies. Changing the 
-#' description file to add the dependency, and linking 'BH' allows the package to work.
+#' was not currently on CRAN, and used to fail a check on dependencies. Changing the 
+#' description file was needed to add the dependency, and linking 'BH' allow3e the package to work.
 #' This function attempts to check-out the latest version of bigalgebra from SVN
 #' version management system and corrects the description file then installs.
 #' Note you must also have 'BLAS' installed on your system to utilise this package
@@ -2350,9 +2357,26 @@ cut.fac <- function(N,n.grps,start.zero=FALSE,factor=TRUE) {
 
 #' PCA/Singular Value Decomposition for big.matrix
 #' 
-#' description ...
-#' ...
-#' ...
+#' At the time of submission there was no existing native method to conduct principle components
+#' analysis (PCA) on big.matrix objects. This function allows singular value decomposition (SVD) of
+#' very large matrices, very efficiently, versus the default method. The major speed advantages
+#' occur when the 'bigalgebra' package is installed, and when the argument for this function
+#' 'SVD'=TRUE. Regular PCA can be conducted using SVD=FALSE but it will be slower and the maximum
+#' matrix size able to produce a result, given memory limits, will be smaller. SVD is not exactly
+#' the same as PCA, but from my testing the components produced will correlate R>.9 with components
+#' of PCA on the same matrix. This function is not completely native to big.matrix objects so 
+#' there is one step where the matrix submitted needs to be loaded into memory, so if your 
+#' big.matrix object is larger than the allowed size of a standard R-matrix [[which is roughly 3GB; 
+#' you can check using NCmisc::estimate.memory()], then this function will fail unless you set the 
+#' option 'thin' to a percentage that, multiplied by the original matrix memory-load, is under 3GB.
+#' For large matrices in my applications, components produced with thinning are still highly 
+#' correlated with components produced using the full dataset. For a breakdown of thinning methods,
+#' see the description for the function thin() for more  information. Even with medium sized
+#' matrices, for instance 15,000 x 50,000 in size, this function is orders of magnitude faster
+#' than the standard R PCA functions, usually running in a matter of minutes, rather than hours
+#' or days in examples that I have tested, due to much better handling of memory for internal
+#' transpose and eigen operations by using the 'bigmemory' architecture.
+#'
 #' @param bigMat a big.matrix object, or any argument accepted by get.big.matrix(), which includes
 #'  paths to description files or even a standard matrix object.
 #' @param dir directory containing the filebacked.big.matrix, and also where the output
