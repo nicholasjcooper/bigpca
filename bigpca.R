@@ -1415,7 +1415,8 @@ import.big.data <- function(input.fn=NULL, dir=getwd(), long=FALSE, rows.fn=NULL
     #test file type if matrix
     #preview(c("ff","numfls","ifn","col.mode","ffr","ffc"))
     if(long) { input.is.vec <- T } else {
-      if(file.ncol(ifn)>1) { input.is.vec <- F } else { input.is.vec <- T }
+      ncifn <- file.ncol(ifn); if(is.na(ncifn)) { stop("input file ",ifn," was empty") }
+      if(ncifn>1) { input.is.vec <- F } else { input.is.vec <- T }
     }
     nxt.rng <- (fil.ofs[ff]+1):(fil.ofs[ff+1])
     #preview("nxt.rng")
