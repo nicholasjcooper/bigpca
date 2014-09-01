@@ -637,6 +637,7 @@ choose.comb.fn <- function(result.list,stepz) {
 svn.bigalgebra.install <- function(verbose=FALSE) {
   # this is a major hack to install bigalgebra from SVN,
   # manually modifying the DESCRIPTION file to depend and link to 'BH'
+  warning("bigalgebra is now on CRAN and so this function should be unnecessary")
   cur.dir <- getwd()
   cat("\nAttempting to install the bigalgebra package using SVN")
   if(verbose) { cat("\n") } else { cat(" .") }
@@ -718,6 +719,7 @@ big.algebra.install.help <- function(verbose=FALSE) {
   # guide a manual installation
   try({ if(do.call("require",args=list("bigalgebra"))) { return(T) } })
   if("bigalgebra" %in% search.cran("big")[[1]]) { must.use.package("bigalgebra",T); return() }
+  warning("bigalgebra is now on CRAN and so this function should be unnecessary")
   cat("\nbigalgebra installation not found, will attempt to install now, but it can be tricky\n")
   do.call("install.packages",args=list("bigalgebra", repos="http://R-Forge.R-project.org"))
   if(do.call("require",args=list("bigalgebra"))) {
