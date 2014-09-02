@@ -989,10 +989,12 @@ check.text.matrix.format <- function(fn,ncol=NA,header=NULL,row.names=NULL,sep="
 #' @export
 #' @author Nicholas Cooper 
 #' @examples 
+#' orig.dir <- getwd(); setwd(tempdir()); # move to temporary dir
 #' mat <- (generate.test.matrix(5)); prv(mat)
 #' lst <- (generate.test.matrix(5,3,big.matrix=TRUE,file.name="bigtest"))
 #' mat <- lst[[1]]; prv(mat); headl(lst[2:3]); 
 #' unlink(unlist(lst[2:3]))
+#' setwd(orig.dir) # reset working dir to original
 generate.test.matrix <- function(size=5,row.exp=2,rand=rnorm,dimnames=TRUE,
                                  data.frame=FALSE,big.matrix=FALSE,file.name=NULL, 
                                  tracker=TRUE) {
@@ -1129,6 +1131,7 @@ dir.force.slash <- function(dir) {
 #'  when text input is split across multiple files)
 #' @export
 #' @examples 
+#' orig.dir <- getwd(); setwd(tempdir()); # move to temporary dir
 #' # Collate all file names to use in this example #
 #' all.fn <- c("rownames.txt","colnames.txt","functestdn.txt","funclongcol.txt","functest.txt",
 #'  paste("rn",1:3,".txt",sep=""),paste("cn",1:3,".txt",sep=""),
@@ -1225,6 +1228,7 @@ dir.force.slash <- function(dir) {
 #' unlink(c("funclongcol.bck","funclongcol.dsc","functest.bck","functest.dsc",
 #'  "functestdn.RData","functestdn.bck","functestdn.dsc","functestdn_file_rowname_list_check_this.txt",
 #'  "split1.bck","split1.dsc","splitmatR1.bck","splitmatR1.dsc"))
+#' setwd(orig.dir) # reset working dir to original
 import.big.data <- function(input.fn=NULL, dir=getwd(), long=FALSE, rows.fn=NULL, cols.fn=NULL, 
                               pref="", delete.existing=TRUE, ret.obj=FALSE, verbose=TRUE, row.names=NULL, col.names=NULL,
                               dat.type="double", ram.gb=2, hd.gb=1000, tracker=TRUE)
@@ -1769,6 +1773,7 @@ thin <- function(bigMat,keep=0.05,how=c("uniform","correlation","pca","associati
 #' @export
 #' @author Nicholas Cooper 
 #' @examples 
+#' orig.dir <- getwd(); setwd(tempdir()); # move to temporary dir
 #' bmat <- generate.test.matrix(5,big.matrix=TRUE)
 #' # take a subset of the big.matrix without using deepcopy
 #' sel <- big.select(bmat,c(1,2,8),c(2:10),deepC=FALSE,verbose=TRUE)
@@ -1779,6 +1784,7 @@ thin <- function(bigMat,keep=0.05,how=c("uniform","correlation","pca","associati
 #' sel <- big.select(bmat, "bigrowstemp.txt","bigcolstemp.txt", delete.existing=TRUE)
 #' prv.big.matrix(sel)
 #' unlink(c("bigcolstemp.txt","bigrowstemp.txt","sel.RData","sel.bck","sel.dsc"))
+#' setwd(orig.dir) # reset working dir to original
 big.select <- function(bigMat, select.rows=NULL, select.cols=NULL, dir=getwd(), 
                        deepC=TRUE, pref="sel", delete.existing=FALSE, verbose=FALSE)
 {
@@ -2639,6 +2645,7 @@ big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FA
 #' @seealso big.pca
 #' @author Nicholas Cooper 
 #' @examples 
+#' orig.dir <- getwd(); setwd(tempdir()); # move to temporary dir
 #' mat2 <- sim.cor(500,200,genr=function(n){ (runif(n)/2+.5) })
 #' bmat2 <- as.big.matrix(mat2,backingfile="testMyBig.bck",descriptorfile="testMyBig.dsc")
 #' ## calculate PCA ##
@@ -2648,6 +2655,7 @@ big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FA
 #' # c1 <- get.big.matrix(corrected) ; c2 <- get.big.matrix(corrected2)
 #' # all.equal(as.matrix(c1),as.matrix(c2))
 #' unlink(c("testMyBig.bck","testMyBig.dsc"))
+#' setwd(orig.dir) # reset working dir to original
 PC.correct <- function(pca.result,bigMat,dir=getwd(),num.pcs=9,n.cores=1,pref="corrected",
                             big.cor.fn=NULL,write=FALSE,sample.info=NULL,correct.sex=FALSE,
                             add.int=FALSE,preserve.median=FALSE, tracker=TRUE,verbose=TRUE)
