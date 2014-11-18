@@ -2417,6 +2417,7 @@ cut.fac <- function(N,n.grps,start.zero=FALSE,factor=TRUE) {
 #'  standardize the bigMat object before running this function.
 #' @param save.pcs whether to save the principle component matrix and eigenvalues to a binary file with name pcs.fn
 #' @param pcs.fn name of the binary when save.pcs=TRUE
+#' @param return.loadings logical, whether to return the 'loadings' (or the other singular vector when SVD=T); could result in a speed decrease
 #' @param verbose whether to display detailed progress of the PCA
 #' @param use.bigalgebra logical, whether to use the bigalgebra package for algebraic operations. For large
 #'  datasets bigalgebra should provide a substantial speedup, and also facilitates use of larger matrices. This 
@@ -2497,7 +2498,7 @@ cut.fac <- function(N,n.grps,start.zero=FALSE,factor=TRUE) {
 #' unlink(c("testMyBig.bck","testMyBig.dsc"))
 big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FALSE,center=TRUE,
                     save.pcs=FALSE,use.bigalgebra=TRUE,pcs.fn="PCsEVsFromPCA.RData",
-                    verbose=FALSE,...) 
+                    return.loadings=FALSE,verbose=FALSE,...) 
 {
   # run principle components analysis on the SNP subset of the LRR snp x sample matrix
   # various methods to choose from with pro/cons of speed/memory, etc.
@@ -2551,6 +2552,7 @@ big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FA
     if(verbose) { cat(" PCA using 'princomp' (only for datasets with more samples than markers)\n") }
     print(system.time(result <- princomp(t(subMat))))
     PCs <- result$scores[,1:pcs.to.keep]
+    loadings <- result$loadings[,1:pcs.to.keep]
     Evalues <- result$sdev^2 # sds are sqrt of eigenvalues
   } else {
     if(!SVD) {
@@ -2567,29 +2569,33 @@ big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FA
       if(verbose) {  cat("took",round(uu[3]/60,1),"minutes\n") }
       PCs <- result$vectors[,1:pcs.to.keep]
       Evalues <- result$values
+      loadings <- NULL
     } else {
       pt <- "package:"; pkgset <- gsub(pt,"",search()[grep(pt,search())])
       do.fast <- (!LAP & (all(c("irlba","bigalgebra") %in% pkgset)))
       if(!use.bigalgebra) { do.fast <- F }
       if(verbose) {
         cat(" PCA by singular value decomposition...") # La.svd gives result with reversed dims. (faster?)
-      }
+      } 
+      if(return.loadings)  { nU <- pcs.to.keep } else { nU <- 0 }
       if(!LAP) {
         if(do.fast) {
-          uu <-(system.time(result <- irlba(subMat,nv=pcs.to.keep,nu=0,matmul=matmul))) 
+          uu <-(system.time(result <- irlba(subMat,nv=pcs.to.keep,nu=nU,matmul=matmul))) 
         } else {
           if(use.bigalgebra & verbose) { warning("[without 'bigalgebra' package, PCA runs slowly for large datasets,", 
               "see 'big.algebra.install.help()']\n") }
-          uu <-(system.time(result <- svd(subMat,nv=pcs.to.keep,nu=0)))
+          uu <-(system.time(result <- svd(subMat,nv=pcs.to.keep,nu=nU)))
         }
         if(verbose) { cat("took",round(uu[3]/60,1),"minutes\n") }
         PCs <- result$v[,1:pcs.to.keep]
+        loadings <- result$u[,1:pcs.to.keep]
         Evalues <- result$d^2 # singular values are the sqrt of eigenvalues
       } else {
         if(verbose) { cat("\n [using LAPACK alternative with La.svd]") }
-        uu <- (system.time(result <- La.svd(subMat,nv=pcs.to.keep,nu=0)))
+        uu <- (system.time(result <- La.svd(subMat,nv=pcs.to.keep,nu=nU)))
         if(verbose) { cat("took",round(uu[3]/60,1),"minutes\n") }
         PCs <- t(result$vt)[,1:pcs.to.keep]  ##?
+        loadings <- result$u[,1:pcs.to.keep]
         Evalues <- result$d^2 # singular values are the sqrt of eigenvalues
       }
     }
@@ -2599,9 +2605,16 @@ big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FA
   if(save.pcs) {
     ofn <- cat.path(dir$pc,pcs.fn)
     cat(paste("~wrote PC data to file:",ofn,"\n"))
-    save(PCs,Evalues,file=ofn) }
-  out.dat <- list(PCs,Evalues)
-  names(out.dat) <- c("PCs","Evalues")
+    save(PCs,Evalues,loadings,file=ofn) }
+  if(return.loadings & exists("loadings")) {
+    colnames(loadings) <- paste("PC",1:pcs.to.keep,sep="")
+    rownames(loadings) <- rownames(subMat)
+    out.dat <- list(PCs,Evalues,loadings)
+    names(out.dat) <- c("PCs","Evalues","loadings")
+  } else {
+    out.dat <- list(PCs,Evalues)
+    names(out.dat) <- c("PCs","Evalues")
+  }
   return(out.dat)
 }
 
