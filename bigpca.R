@@ -2414,7 +2414,8 @@ cut.fac <- function(N,n.grps,start.zero=FALSE,factor=TRUE) {
 #' @param center whether to 'centre' the matrix rows by subtracting rowMeans() before conducting the PCA. This is usually
 #'  advisable, although you may wish to skip this if the matrix is already centred to save extra processing.
 #'  unlike prcomp there is no option to standardize or use the correlation matrix, if this is desired, please
-#'  standardize the bigMat object before running this function.
+#'  standardize the bigMat object before running this function. Alternatively, 'center' can be a vector of length
+#'  nrow(bigMat) which gives an offset to correct each row by.
 #' @param save.pcs whether to save the principle component matrix and eigenvalues to a binary file with name pcs.fn
 #' @param pcs.fn name of the binary when save.pcs=TRUE
 #' @param return.loadings logical, whether to return the 'loadings' (or the other singular vector when SVD=T); could result in a speed decrease
@@ -2529,12 +2530,28 @@ big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FA
   subMat <- pcaMat[1:nrow(pcaMat),1:ncol(pcaMat)] # must convert bigmatrix to plain matrix here, no pca yet takes a bigmatrix
   rm(pcaMat)
   # center using row means
+  if(length(center)>1) {
+    if(length(center)==nrow(subMat)) {
+      CM <- center
+      center <- TRUE
+      rm.sub <- function(X) { 
+        mmm <-  matrix(rep(CM,times=ncol(subMat)),ncol=ncol(subMat),byrow=F)
+        prv(mmm)
+        return(mmm)
+      }
+    } else {
+      rm.sub <- rowMeans ; warning("center vector didn't match number of rows of 'bigMat', data left uncentered")
+      center <- FALSE
+    }
+  } else { 
+      rm.sub <- rowMeans # a bit hacky?
+  }
   if(center) {
     if(verbose) { cat(" centering data by row means...") }
-    subMat <- subMat - rowMeans(subMat)  #matrix(rep(rowMeans(subMat),times=ncol(subMat)),ncol=ncol(subMat))
+    subMat <- subMat - rm.sub(subMat)  #matrix(rep(rowMeans(subMat),times=ncol(subMat)),ncol=ncol(subMat))
     subMat[is.na(subMat)] <- 0 # replace missing with the mean
-    #cat(" means for first 10 snps:\n")
-    #print(round(head(rowMeans(subMat),10))) # show that centering has worked
+    cat(" means for first 10 snps:\n")
+    print(round(head(rowMeans(subMat),10))) # show that centering has worked
   } else {
     subMat <- apply(subMat,1,row.rep)
   }
@@ -2913,7 +2930,7 @@ big.t <- function(bigMat,dir=NULL,name="t.bigMat",R.descr=NULL,max.gb=NA,
     # do the copying
     lilColRange <- c(c1:c2)
     if(tracker) {      loop.tracker(cc,split.to) }
-    if(is.finite(sum(lilColRange))) {
+    if(is.finite(sum(as.numeric(lilColRange)))) {
       #cat(range(lilColRange)); cat(dim(bigTrans)); cat(dim(bigMat))
       bigTrans[lilColRange,1:nR] <- t(bigMat[1:nR,lilColRange])
     } else {
