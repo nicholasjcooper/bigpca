@@ -8,6 +8,8 @@
 ###END NAMESPACE###
 
 
+# may want to use updated irlba2() function in order to allow bigger Matrices to be pca-ed #
+
 #setMethod("print", signature=signature(x="big.matrix"), function(x,...) prv.big.matrix(x,...))
 
 # internal function for testing: 
