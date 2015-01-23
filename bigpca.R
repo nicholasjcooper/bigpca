@@ -60,7 +60,7 @@ manage.test.files <- function(start=TRUE,keepers=NULL) {
 #'  with the first few rows and columns, and the last row and column. Note that sometimes
 #'  the initial printing of a big.matrix can take a little while. But subsequently the printout
 #'  should be almost instantaneous.
-#' @seealso get.big.matrix()
+#' @seealso \code{\link{get.big.matrix}}
 #' @export
 #' @examples 
 #' bM <- filebacked.big.matrix(20, 50,
@@ -150,7 +150,7 @@ prv.big.matrix <- function(bigMat,dir="",rows=3,cols=2,name=NULL,dat=TRUE,
 #'  'tail.auc' is the area under the curve for the estimated eigenvalues. If estimate
 #'  =TRUE then a third element is return with separate variance percentages for
 #'  each of the estimated eigenvalues.
-#' @seealso pca.scree.plots
+#' @seealso \code{\link{pca.scree.plots}}
 #' @export
 #' @examples
 #' nsamp <- 100; nvar <- 300; subset.size <- 25; elbow <- 6
@@ -281,7 +281,7 @@ estimate.eig.vpcs <- function(eigenv=NULL,min.dim=length(eigenv),M=NULL,elbow=NA
 #' @param return.data logical, whether to return the percentages of variance explained for each component, or nothing (just plot)
 #' @param ... further arguments to the plot function
 #' @return Either a vector of variance percentages explained, or nothing (just a plot), depending on value of 'return.data'
-#' @seealso pca.scree.plots
+#' @seealso \code{\link{pca.scree.plots}}
 #' @export
 #' @examples
 #' require(irlba)
@@ -356,7 +356,7 @@ pca.scree.plot <- function(eigenv,elbow=NA,printvar=TRUE,min.dim=NA,M=NULL,add.f
 #' @param max.pc maximum percentage of the variance to capture before the elbow (cumulative sum to PC 'n')
 #' @return The number of last principle component to keep, prior to the determined elbow cutoff
 #' @export
-#' @seealso estimate.eig.vpcs
+#' @seealso \code{\link{estimate.eig.vpcs}}
 #' @author Nicholas Cooper 
 #' @examples
 #' # correlated data
@@ -425,7 +425,7 @@ quick.elbow <- function(varpc,low=.08,max.pc=.9) {
 #' the equivalent operations if needing to be row-wise should be faster with bmcapply for
 #' matrices larger than available RAM.
 #' Can also be used for regular matrices although there is unlikely to be a speed advantage.
-#' @seealso get.big.matrix
+#' @seealso \code{\link{get.big.matrix}}
 #' @param bigMat the big.matrix object to apply the function upon, can enter as a filename,
 #'  description object or any other valid parameter to get.big.matrix(). Can also use with a standard matrix
 #' @param MARGIN 1=row-wise, 2=column-wise, see same argument for base:::apply()
@@ -629,7 +629,7 @@ choose.comb.fn <- function(result.list,stepz) {
 #' but will still run without it. For more information on installation alternatives, 
 #' type big.algebra.install.help().
 #' Returns TRUE if bigalgebra is already installed.
-#' @seealso big.algebra.install.help
+#' @seealso \code{\link{big.algebra.install.help}}
 #' @param verbose whether to report on installation progress/steps
 #' @return If SVN is installed on your system, along with BLAS, this function should install the bigalgebra package,
 #'  else it will return instructions on what to do to fix the issue 
@@ -707,7 +707,7 @@ svn.bigalgebra.install <- function(verbose=FALSE) {
 #' effectively. PCA functions in the present package are better with bigalgebra installed,
 #' but will still run without it. For more information on installation alternatives, 
 #' type big.algebra.install.help().
-#' @seealso svn.bigalgebra.install
+#' @seealso \code{\link{svn.bigalgebra.install}}
 #' @param verbose whether to report on installation progress/steps
 #' @return If bigalgebra is already installed, or can be installed from RForge or SVN,
 #'  this should load or install the bigalgebra package,
@@ -1682,7 +1682,8 @@ select.col.row.custom <- function(bigMat,row,col,verbose=T)
 #' @param ... other arguments to be passed to uniform.select, subpc.select, subcor.select, or select.least.assoc
 #' @return A smaller big.matrix with fewer rows and/or columns than the original matrix
 #' @export
-#' @seealso uniform.select, subpc.select, subcor.select, select.least.assoc, big.select, get.big.matrix
+#' @seealso \code{\link{uniform.select}}, \code{\link{subpc.select}}, \code{\link{subcor.select}}, 
+#' \code{\link{select.least.assoc}}, \code{\link{big.select}}, \code{\link{get.big.matrix}}
 #' @author Nicholas Cooper 
 #' @examples 
 #' bmat <- generate.test.matrix(5,big.matrix=TRUE)
@@ -1913,7 +1914,7 @@ big.select <- function(bigMat, select.rows=NULL, select.cols=NULL, dir=getwd(),
 #' @return A set of row or column indexes (depents on 'rows' parameter) of the most representative
 #'  variables in the matrix, as defined by most correlated to principle components
 #' @export
-#' @seealso thin, uniform.select, big.PCA, get.big.matrix
+#' @seealso \code{\link{thin}}, \code{\link{uniform.select}}, \code{\link{big.PCA}}, \code{\link{get.big.matrix}}
 #' @author Nicholas Cooper 
 #' @examples 
 #' mat <- matrix(rnorm(200*2000),ncol=200) # normal matrix
@@ -2026,7 +2027,7 @@ subpc.select <- function(bigMat,keep=.05,rows=TRUE,dir=getwd(),random=TRUE,ram.g
 #' @return A set of row or column indexes (depents on 'rows' parameter) of the most inter-correlated
 #'  (or least) variables in the matrix.
 #' @export
-#' @seealso thin, uniform.select, get.big.matrix
+#' @seealso \code{\link{thin}}, \code{\link{uniform.select}}, \code{\link{get.big.matrix}}
 #' @author Nicholas Cooper 
 #' @examples 
 #' mat <- matrix(rnorm(200*2000),ncol=200)
@@ -2107,7 +2108,7 @@ subcor.select <- function(bigMat,keep=.05,rows=TRUE,hi.cor=TRUE,dir=getwd(),rand
 #' @return A set of row or column indexes (depents on 'rows' parameter) of uniformly distributed
 #'  (optionally reproduceable) or randomly selected variables in the matrix.
 #' @export
-#' @seealso subpc.select
+#' @seealso \code{\link{subpc.select}}
 #' @author Nicholas Cooper 
 #' @examples 
 #' mat <- matrix(rnorm(200*100),ncol=200)  # standard matrix
@@ -2170,7 +2171,7 @@ uniform.select <- function(bigMat,keep=.05,rows=TRUE,dir="",random=TRUE,ram.gb=0
 #' Except if p.values and F.values are both set to false and the phenotype is continuous, then pearsons correlation values
 #' will be returned
 #' @export
-#' @seealso get.big.matrix
+#' @seealso \code{\link{get.big.matrix}}
 #' @author Nicholas Cooper 
 #' @examples 
 #' bmat <- generate.test.matrix(5,big.matrix=TRUE)
@@ -2314,7 +2315,7 @@ quick.pheno.assocs <- function(bigMat,sample.info=NULL,use.col="phenotype",dir="
 #' @return A set of row or column indexes (depents on 'rows' parameter) of the variables most dependent
 #'  (or indepent) variables measured by association with a [continuous/categorical] phenotype.
 #' @export
-#' @seealso quick.pheno.assocs
+#' @seealso \code{\link{quick.pheno.assocs}}
 #' @author Nicholas Cooper 
 #' @examples 
 #' bmat <- generate.test.matrix(5,big.matrix=TRUE)
@@ -2432,7 +2433,7 @@ cut.fac <- function(N,n.grps,start.zero=FALSE,factor=TRUE) {
 #' @return A list of principle components/singular vectors (may be incomplete depending on options selected), and of
 #'  the eigenvalues/singular values.
 #' @export
-#' @seealso get.big.matrix, PC.correct
+#' @seealso \code{\link{get.big.matrix}}, \code{\link{PC.correct}}
 #' @author Nicholas Cooper
 #' @examples 
 ## PRELIMINARY EXAMPLES: demonstration of PCA versus SVD ##
@@ -2674,7 +2675,7 @@ big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FA
 #' @param verbose logical, whether to display preview of pre- and post- corrected matrix
 #' @return A big.matrix of the same dimensions as original, corrected for n PCs and an optional covariate (sex)
 #' @export
-#' @seealso big.pca
+#' @seealso \code{\link{big.pca}}
 #' @author Nicholas Cooper 
 #' @examples 
 #' orig.dir <- getwd(); setwd(tempdir()); # move to temporary dir
