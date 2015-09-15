@@ -133,7 +133,7 @@ prv.big.matrix <- function(bigMat,dir="",rows=3,cols=2,name=NULL,dat=TRUE,
 #' @param elbow the number of components which you think explain the important portion
 #'  of the variance of the dataset, so further components are assumed to be reflecting
 #'  noise or very subtle effects, e.g, often the number of components used is decided
-#'  by the 'elbow' in  a scree plot (see 'pca.scree.plots')
+#'  by the 'elbow' in  a scree plot (see 'pca.scree.plot')
 #' @param linear whether to use a linear model to model the 'noise' eigenvalues; alternative
 #'  is a 1/x model with no intercept.
 #' @param estimated logical, whether to return the estimated variance percentages for unobserved eigenvalues
@@ -142,7 +142,7 @@ prv.big.matrix <- function(bigMat,dir="",rows=3,cols=2,name=NULL,dat=TRUE,
 #' @param print.est whether to output the estimate result to the console
 #' @param print.coef whether to output the estimate regression coefficients to the console
 #' @param add.fit.line logical, if there is an existing scree plot, adds the fit line from this estimate
-#'  to the plot ('pca.scree.plots' can use this option using the parameter of the same name)
+#'  to the plot ('pca.scree.plot' can use this option using the parameter of the same name)
 #' @param col colour for the fit line
 #' @param ignore.warn ignore warnings when an estimate is not required (i.e, all eigenvalues present)
 #' @return By default returns a list where the first element ''variance.pcs' are the known variance
@@ -150,7 +150,7 @@ prv.big.matrix <- function(bigMat,dir="",rows=3,cols=2,name=NULL,dat=TRUE,
 #'  'tail.auc' is the area under the curve for the estimated eigenvalues. If estimate
 #'  =TRUE then a third element is return with separate variance percentages for
 #'  each of the estimated eigenvalues.
-#' @seealso \code{\link{pca.scree.plots}}
+#' @seealso \code{\link{pca.scree.plot}}
 #' @export
 #' @examples
 #' nsamp <- 100; nvar <- 300; subset.size <- 25; elbow <- 6
@@ -255,7 +255,7 @@ estimate.eig.vpcs <- function(eigenv=NULL,min.dim=length(eigenv),M=NULL,elbow=NA
 
 #' Make scree plots for any PCA
 #'
-#' Make a scree plot using eigenvalues from princomp(), prcomp(), svd(), irlba(), big.pca(), etc.
+#' Make a scree plot using eigenvalues from princomp(), prcomp(), svd(), irlba(), big.PCA(), etc.
 #' Note that most these return values which need to be squared to be proper eigenvalues.
 #' There is also an option to use the estimate.eig.vpcs() function to estimate any missing
 #' eigenvalues (e.g, if using a function like irlba' to calculate PCA) and then to visualise
@@ -265,7 +265,7 @@ estimate.eig.vpcs <- function(eigenv=NULL,min.dim=length(eigenv),M=NULL,elbow=NA
 #' @param elbow the number of components which you think explain the important chunk
 #'  of the variance of the dataset, so further components are modelled as reflecting
 #'  noise or very subtle effects, e.g, often the number of components used is decided
-#'  by the 'elbow' in  a scree plot (see 'pca.scree.plots')
+#'  by the 'elbow' in  a scree plot (see 'pca.scree.plot')
 #' @param min.dim the size of the smaller dimension of the matrix submitted to singular
 #'  value decomposition, e.g, number of samples - i.e, the max number of possible eigenvalues,
 #'  alternatively use 'M'.
@@ -275,13 +275,13 @@ estimate.eig.vpcs <- function(eigenv=NULL,min.dim=length(eigenv),M=NULL,elbow=NA
 #'  is a 1/x model with no intercept.
 #' @param printvar logical, whether to print summary of variance calculations
 #' @param add.fit.line logical, if there is an existing scree plot, adds the fit line from this estimate
-#'  to the plot ('pca.scree.plots' can use this option using the parameter of the same name)
+#'  to the plot ('pca.scree.plot' can use this option using the parameter of the same name)
 #' @param n.xax number of components to include on the x-axis
 #' @param verbose logical, whether to display additional output
 #' @param return.data logical, whether to return the percentages of variance explained for each component, or nothing (just plot)
 #' @param ... further arguments to the plot function
 #' @return Either a vector of variance percentages explained, or nothing (just a plot), depending on value of 'return.data'
-#' @seealso \code{\link{pca.scree.plots}}
+#' @seealso \code{\link{pca.scree.plot}}
 #' @export
 #' @examples
 #' require(irlba)
@@ -508,7 +508,11 @@ bmcapply <- function(bigMat,MARGIN,FUN,dir=NULL,by=200,n.cores=1,
   if(length(dim(bigMat))!=2) { stop("this function only works on matrix objects") }
   if(bycol) { tot.main <- ncol(bigMat) } else { tot.main <- nrow(bigMat)}
   stepz <- round(seq(from=1,to=(tot.main+1),by=by))
+  # if the last step is too small, merge with previous
+  sc.lst <- head(tail(stepz,2),1); lst <- tail(stepz,1)
   if((tail(stepz,1)) != (tot.main+1)) { stepz <- c(stepz,(tot.main+1)) }
+  if(lst-sc.lst <=2) { ll <- length(stepz); if(ll>2) { stepz <- stepz[-(ll-1)] } else { warning("number of rows/columns quite small, may cause issues") } }
+  #
   split.to <- length(stepz)-1
   result <- numeric(tot.main)
   ## define the function
@@ -1515,7 +1519,7 @@ import.big.data <- function(input.fn=NULL, dir=getwd(), long=FALSE, rows.fn=NULL
           rownames(bigVar) <- file.rn; cat("updated big.matrix rownames from names in file(s)\n")
           bigmemory::flush(bigVar)
           big.des <- describe(bigVar)
-          des.fn <- cat.path(fn=des.fn,ext="RData")
+          des.fn <- cat.path(dir=dir$big,fn=des.fn,ext="RData")
           save(big.des,file=des.fn)
           warning("Had to change description file to a binary file to update rownames. This can be read in with get.big.matrix() [and should be faster to load]")
         } else {
@@ -1550,7 +1554,7 @@ import.big.data <- function(input.fn=NULL, dir=getwd(), long=FALSE, rows.fn=NULL
   } else {
     # convert to RData file regardless as the old descriptor files are now very slow
     big.des <- describe(bigVar)
-    des.fn <- cat.path(fn=des.fn,ext="RData")
+    des.fn <- cat.path(dir=dir$big,fn=des.fn,ext="RData")
     save(big.des,file=des.fn)
     return(des.fn)
   }
@@ -2168,7 +2172,7 @@ uniform.select <- function(bigMat,keep=.05,rows=TRUE,dir="",random=TRUE,ram.gb=0
 #' If the phenotype has 20 more or more unique categories, it will be assumed to be continuous and the association
 #' test applied will be correlation. If there are two categories a t-test will be used, and 3 to 19 categories, an ANOVA#
 #' will be used. Regardless of the analysis function, output will be converted to an F statistic and/or associated p-values.
-#' Except if p.values and F.values are both set to false and the phenotype is continuous, then pearsons correlation values
+#' Except if p.values and F.values are both set to FALSE and the phenotype is continuous, then pearsons correlation values
 #' will be returned
 #' @export
 #' @seealso \code{\link{get.big.matrix}}
@@ -2522,7 +2526,7 @@ big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FA
     if(verbose) {  prv.big.matrix(bigMat) }
   } 
   pcaMat <- get.big.matrix(bigMat,dir)
-  print(dim(pcaMat))
+  #print(dim(pcaMat))
   if(verbose & !thin) { prv.big.matrix(pcaMat,name="pcaMat") }
   est.mem <- estimate.memory(pcaMat)
   if(est.mem>1) {
@@ -2608,14 +2612,16 @@ big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FA
         }
         if(verbose) { cat("took",round(uu[3]/60,1),"minutes\n") }
         PCs <- result$v[,1:pcs.to.keep]
-        loadings <- result$u[,1:pcs.to.keep]
-        Evalues <- result$d^2 # singular values are the sqrt of eigenvalues
+        #print("thus ones"); prv(result,return.loadings,nU)
+        if(return.loadings) { loadings <- result$u[,1:pcs.to.keep] } else { loadings <- NULL }
+        Evalues <- result$d^2 # singular values are the sqrt of eigenvalues 
       } else {
         if(verbose) { cat("\n [using LAPACK alternative with La.svd]") }
         uu <- (system.time(result <- La.svd(subMat,nv=pcs.to.keep,nu=nU)))
         if(verbose) { cat("took",round(uu[3]/60,1),"minutes\n") }
         PCs <- t(result$vt)[,1:pcs.to.keep]  ##?
-        loadings <- result$u[,1:pcs.to.keep]
+       # print("thOs ones")
+        if(return.loadings) { loadings <- result$u[,1:pcs.to.keep] } else { loadings <- NULL }
         Evalues <- result$d^2 # singular values are the sqrt of eigenvalues
       }
     }
@@ -2647,12 +2653,12 @@ big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FA
 #' 
 #' Principle components (PC) can be used as a way of capturing bias (when common variance represents bias)
 #' and so PC correction is a way to remove such bias from a dataset. Using the first 'n' PCs from an 
-#' an analysis performed using big.pca(), this function will transform the original matrix by regressing
+#' an analysis performed using big.PCA(), this function will transform the original matrix by regressing
 #' onto the 'n' principle components (and optionally gender) and returing the residuals. The result
 #' is returned as a big.matrix object, so that objects larger than available RAM can be processed, and
 #' multiple processors can be utilised for greater speed for large datasets.
 #' 
-#' @param pca.result result returned by 'big.pca()', or a list with 2 elements containing
+#' @param pca.result result returned by 'big.PCA()', or a list with 2 elements containing
 #'  the principle components and the eigenvalues respectively (or SVD equivalents). Alternatively,
 #'  can be the name of an R binary file containing such an object.
 #' @param bigMat a big.matrix with exactly corresponding samples (columns) to those submitted to PCA prior to correction
@@ -2675,7 +2681,7 @@ big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FA
 #' @param verbose logical, whether to display preview of pre- and post- corrected matrix
 #' @return A big.matrix of the same dimensions as original, corrected for n PCs and an optional covariate (sex)
 #' @export
-#' @seealso \code{\link{big.pca}}
+#' @seealso \code{\link{big.PCA}}
 #' @author Nicholas Cooper 
 #' @examples 
 #' orig.dir <- getwd(); setwd(tempdir()); # move to temporary dir
@@ -2741,6 +2747,8 @@ PC.correct <- function(pca.result,bigMat,dir=getwd(),num.pcs=9,n.cores=1,pref="c
   }
   # create new matrix same size, ready for corrected values
   nR <- nrow(origMat); nC <- ncol(origMat)
+  if(nR<2) { stop("too few rows to run PC correction") }
+  if(nC<2) { stop("too few columns to run PC correction") }
   if(verbose) { cat(" creating new file backed big.matrix to store corrected data...") }
   pcCorMat <- filebacked.big.matrix(nR,nC, backingfile=paste(pref,"bck",sep="."),
                                     backingpath=dir$big, descriptorfile=paste(pref,"dsc",sep="."))
@@ -2765,7 +2773,7 @@ PC.correct <- function(pca.result,bigMat,dir=getwd(),num.pcs=9,n.cores=1,pref="c
     }
   }
   nPCs <- cbind(rep(1,nrow(nPCs)),nPCs) # this adds intercept term for lm.fit() [remove if using lm() ]
-  cat(" correcting by principle components",sex.txt,", taking the LRR lm-residual for each SNP\n",sep="")
+  cat(" correcting by principle components",sex.txt,", taking the regression-residual for each variable\n",sep="")
   jj <- proc.time()
   nsamples <- ncol(origMat)
   num.snps <- nrow(origMat); sampz <- 1:nsamples
@@ -2775,21 +2783,26 @@ PC.correct <- function(pca.result,bigMat,dir=getwd(),num.pcs=9,n.cores=1,pref="c
   ## assume if we have lots of cores, we'd also have lots of RAM too
   if(n.cores>5) { snps.per.proc <- snps.per.proc*2; flush.freq <- flush.freq*2 } 
   if(n.cores>15) { snps.per.proc <- snps.per.proc*2 }
-  snps.per.proc <- max(snps.per.proc,n.cores) # at least 1 snp per core as a minimum
+  #snps.per.proc <- max(snps.per.proc,n.cores) # at least 1 snp per core as a minimum
+  if(snps.per.proc<n.cores) { n.cores <- snps.per.proc %/% 5 } # if really low num, use less cores
   stepz <- round(seq(from=1,to=num.snps+1,by=snps.per.proc))
   if((tail(stepz,1)) != num.snps+1) { stepz <- c(stepz,num.snps+1) }
+  # if the last step is too small, merge with previous
+  sc.lst <- head(tail(stepz,2),1); lst <- tail(stepz,1)
+  if(lst-sc.lst <=4) { ll <- length(stepz); if(ll>2) { stepz <- stepz[-(ll-1)] } else { warning("number of SNPs quite small, may cause issues") } }
   split.to <- length(stepz)-1
   big.extras <- T # flush memory every 'n' iterations.
-  
   # this simple way works (instead of big for-loop) but hogs memory and is no faster
   # [NB: requires transpose of target corrected big matrix dimensions]
   ### pcCorMat <- apply(origMat,1,PC.fn,nPCs=nPCs,col.sel=sampz)
-  for (dd in 1:split.to)
+  for (dd n 1:split.to)
   {
     x1 <- stepz[dd]; x2 <- stepz[dd+1]-1 #subset row selection
     # use of this 'sub.big.matrix' structure, stops the memory leak behaviour which spirals
     # the memory relating to 'origMat' out of control. 
     next.rows <- sub.big.matrix(origMat, firstRow=x1, lastRow=x2, backingpath=dir$big )
+    if(length(Dim(next.rows))!=2) { stop("expected a matrix, got a vector")}
+   # prv(next.rows,x1,x2,nPCs,multi,split.to,stepz)
     # next.rows is now a pointer to a matrix subset, must use 'as.matrix' to coerce to a regular R object 
     if(multi) {
       #pcCorMat[x1:x2,] <- PC.fn.mat.multi(next.rows[1:nrow(next.rows),1:ncol(next.rows)],nPCs,mc.cores=n.cores,add.int=add.int)
@@ -2922,7 +2935,11 @@ big.t <- function(bigMat,dir=NULL,name="t.bigMat",R.descr=NULL,max.gb=NA,
   split.to <- 10*round(estimate.memory(bigMat)) # split into .1GB chunks, save RAM without creating groups too small to process
   #if(n.cores>4) { split.to <- split.to * 4 } # divide more if using multicores
   stepz <- round(seq(from=1,to=nC+1,length.out=round((split.to+1))))
+  # if the last step is too small, merge with previous
+  sc.lst <- head(tail(stepz,2),1); lst <- tail(stepz,1)
   if((tail(stepz,1)) != nC+1) { stepz <- c(stepz,nC+1) }
+  if(lst-sc.lst <=2) { ll <- length(stepz); if(ll>2) { stepz <- stepz[-(ll-1)] } else { warning("number of columns quite small, may cause issues") } }
+  #
   split.to <- length(stepz)-1
   if(verbose) { cat(" transposing 'bigMat' into new big.matrix object:\n") }
   if(is.na(max.gb)) { max.gb <- split.to + 10 }
@@ -2986,7 +3003,8 @@ PC.fn.mat.apply <- function(nextrows, nPCs, add.int=F, pm=FALSE)
   # matrix version of PC.fn (used to PC-correct one SNP at a time), vectorized version
   # testing shows the for-loop (non-vectorized) to be slightly faster, maybe because of t()
   # when using PC.fn.2 must pass in vec of 1's if you want the intecept
-  col.sel <- 1:ncol(nextrows)
+  nc <- ncol(nextrows); if(nc<1) { warning("nextrows had less than 1 column"); return(rep(0,length(nextrows))) }
+  col.sel <- 1:nc
   nextrows <- t(apply(nextrows,1,PC.fn.2,nPCs=nPCs,col.sel=col.sel,add.int=add.int,pm=pm))
   return(nextrows)
 }
@@ -2998,11 +3016,16 @@ PC.fn.mat.multi <- function(nextrows, nPCs, mc.cores=1, add.int=F, pm=FALSE)
   # matrix version of PC.fn (used to PC-correct one SNP at a time), vectorized version
   # testing shows the for-loop (non-vectorized) to be slightly faster, maybe because of t()
   # when using PC.fn.2 must pass in vec of 1's if you want the intecept
+  #mc.cores <- 2
   col.sel <- 1:ncol(nextrows)
   nextrows <- lapply(seq_len(nrow(nextrows)), function(i) nextrows[i,]) # multi slows this down
   #nextrows <- multicore::mclapply(nextrows,PC.fn,nPCs=nPCs,col.sel=col.sel,mc.cores=mc.cores)
+ # cat("~")
+ # save(nextrows,nPCs,col.sel,mc.cores,add.int,pm,file="TESTOPOO.RData"); stop()
   nextrows <- parallel::mclapply(nextrows,PC.fn.2,nPCs=nPCs,col.sel=col.sel,mc.cores=mc.cores, add.int=add.int, pm=pm)
+ # cat("+")
   nextrows <- do.call("rbind",nextrows)
+ # cat("`")
   return(nextrows)
 }
 
@@ -3056,7 +3079,10 @@ PC.fn.2 <- function(next.row, nPCs, col.sel, add.int=F, pm=FALSE)
       next.row[sel] <- lm.fit(x=nPCs[sel,],y=next.row[sel])$residuals + int
     }
   } else { 
-    next.row[sel] <- lm.fit(x=nPCs[sel,],y=next.row[sel])$residuals
+    #prv(nPCs[sel,],next.row[sel])
+    next.row[sel] <- stats::lm.fit(x=nPCs[sel,],y=next.row[sel])$residuals
+    #next.row[sel] <- stats::lm.fit(x=sel*2,y=sel+rnorm(length(sel)))$residuals
+    #next.row[sel] <- rep(1,length(sel))
   }
   return(next.row)
 }
