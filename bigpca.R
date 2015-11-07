@@ -8,6 +8,10 @@
 ###END NAMESPACE###
 
 
+.onLoad <- function(libname, pkgname) {
+  options(deleteFileBacked=TRUE) # generally will be nice to set this to TRUE to avoid be prevented from overwriting files
+}
+
 # may want to use updated irlba2() function in order to allow bigger Matrices to be pca-ed #
 
 #setMethod("print", signature=signature(x="big.matrix"), function(x,...) prv.big.matrix(x,...))
@@ -1417,6 +1421,7 @@ import.big.data <- function(input.fn=NULL, dir=getwd(), long=FALSE, rows.fn=NULL
   cat("\nCreating big matrix object to store group data")
   cat("\n predicted disk use: ",round(em,1),"GB\n")
   if(is.character(dir.force.slash(dir$big))) { if(dir$big=="") { dir$big <- getwd() } }
+  if(delete.existing & file.exists(cat.path(dir$big,bck.fn))) { unlink(cat.path(dir$big,bck.fn)) }
   bigVar <- big.matrix(nrow=rws,ncol=cls, backingfile=bck.fn, dimnames=list(cmb.row.list,cmb.ID.list),
                        type=dat.type, backingpath=dir.force.slash(dir$big),
                        descriptorfile=des.fn)
@@ -1838,6 +1843,7 @@ big.select <- function(bigMat, select.rows=NULL, select.cols=NULL, dir=getwd(),
       cat(" adding rownames\n") ; rownames(bigMat1) <- rownames(bigMat)[to.order.r] 
       cat(" converting matrix to big.matrix\n") 
     }
+    if(delete.existing & file.exists(cat.path(dir$big,basename(bck.fn.o)))) { unlink(cat.path(dir$big,basename(bck.fn.o))) }
     bigMat2 <- as.big.matrix(bigMat1, backingfile=basename(bck.fn.o),
                              descriptorfile=basename(des.fn.o),backingpath=dir$big)
     if(verbose) { cat(paste(" matrix descr saved as standard description file:",des.fn.o,"\n")) }
@@ -1861,6 +1867,7 @@ big.select <- function(bigMat, select.rows=NULL, select.cols=NULL, dir=getwd(),
         #stop()
       }
     if(verbose) { cat(" starting deep copy...") }
+    if(delete.existing & file.exists(cat.path(dir$big,basename(bck.fn.o)))) { unlink(cat.path(dir$big,basename(bck.fn.o))) }
     bigMat2 <- deepcopy(bigMat, cols = to.order.c, rows = to.order.r,
                         backingfile=basename(bck.fn.o),backingpath=dir$big,
                         descriptorfile=basename(des.fn.o) )
@@ -2433,7 +2440,11 @@ cut.fac <- function(N,n.grps,start.zero=FALSE,factor=TRUE) {
 #'  is not currently available on CRAN, but only SVN and RForge. See svn.bigalgebra.install() or big.algebra.install.help()
 #'  Default is to use bigalgebra if available (TRUE), but setting this FALSE prevents the check for bigalgebra which would be
 #'  cleaner if you know that you don't have it installed.
-#' @param ... if thin is TRUE, then these should be any additional arguments for thin(), e.g, 'keep', 'how', etc.
+#' @param ... if thin is TRUE, then these should be any additional arguments for thin(), e.g, 'keep', 'how', etc.i
+#' @param delete.existing logical, whether to automatically delete filebacked matrices (if they exist) 
+#' before rewriting. This is because of an update since 20th October 2015 where bigmemory won't allow
+#' overwrite of an existing filebacked matrix. If you wish to set this always TRUE or FALSE, use
+#'  options(deleteFileBacked)
 #' @return A list of principle components/singular vectors (may be incomplete depending on options selected), and of
 #'  the eigenvalues/singular values.
 #' @export
@@ -2478,6 +2489,7 @@ cut.fac <- function(N,n.grps,start.zero=FALSE,factor=TRUE) {
 #' headl(result)
 #' # plot the eigenvalues with a linear fit line and elbow placed at 13
 #' Eigv <- pca.scree.plot(result$Evalues,M=bmat,elbow=6,printvar=FALSE)
+#' unlink(c("testMyBig.bck","testMyBig.dsc"))
 #' ##  generate some data with reasonable intercorrelations ##
 #' mat2 <- sim.cor(500,200,genr=function(n){ (runif(n)/2+.5) })
 #' bmat2 <- as.big.matrix(mat2,backingfile="testMyBig.bck",descriptorfile="testMyBig.dsc")
@@ -2506,7 +2518,7 @@ cut.fac <- function(N,n.grps,start.zero=FALSE,factor=TRUE) {
 #' unlink(c("testMyBig.bck","testMyBig.dsc"))
 big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FALSE,center=TRUE,
                     save.pcs=FALSE,use.bigalgebra=TRUE,pcs.fn="PCsEVsFromPCA.RData",
-                    return.loadings=FALSE,verbose=FALSE,...) 
+                    return.loadings=FALSE,verbose=FALSE,delete.existing=getOption("deleteFileBacked"),...) 
 {
   # run principle components analysis on the SNP subset of the LRR snp x sample matrix
   # various methods to choose from with pro/cons of speed/memory, etc.
@@ -2676,9 +2688,14 @@ big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FA
 #' @param add.int logical, whether to maintain the pre-corrected means of each variable, i.e, post-correction
 #'  add the mean back onto the residuals which will otherwise have mean zero for each variable.
 #' @param preserve.median logical, if add.int=TRUE, then setting this parameter to TRUE will preserve
-#'  the median of the original data, instead of the mean. This is because after PC-correction the skew may change.
+#'  the median of the original data, instead of the mean. This is because after PC-correction the 
+#'  skew may change.
 #' @param tracker logical, whether to display a progress bar
 #' @param verbose logical, whether to display preview of pre- and post- corrected matrix
+#' @param delete.existing logical, whether to automatically delete filebacked matrices (if they exist) 
+#' before rewriting. This is because of an update since 20th October 2015 where bigmemory won't allow
+#' overwrite of an existing filebacked matrix. If you wish to set this always TRUE or FALSE, use
+#'  options(deleteFileBacked)
 #' @return A big.matrix of the same dimensions as original, corrected for n PCs and an optional covariate (sex)
 #' @export
 #' @seealso \code{\link{big.PCA}}
@@ -2697,7 +2714,8 @@ big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FA
 #' setwd(orig.dir) # reset working dir to original
 PC.correct <- function(pca.result,bigMat,dir=getwd(),num.pcs=9,n.cores=1,pref="corrected",
                             big.cor.fn=NULL,write=FALSE,sample.info=NULL,correct.sex=FALSE,
-                            add.int=FALSE,preserve.median=FALSE, tracker=TRUE,verbose=TRUE)
+                            add.int=FALSE,preserve.median=FALSE, tracker=TRUE,verbose=TRUE,
+                            delete.existing=getOption("deleteFileBacked"))
 {
   ## using results of a PCA analysis, run correction for 'num.pcs' PCs on a dataset
   # uncorrected matrix
@@ -2750,6 +2768,8 @@ PC.correct <- function(pca.result,bigMat,dir=getwd(),num.pcs=9,n.cores=1,pref="c
   if(nR<2) { stop("too few rows to run PC correction") }
   if(nC<2) { stop("too few columns to run PC correction") }
   if(verbose) { cat(" creating new file backed big.matrix to store corrected data...") }
+  fnm <- paste(pref,"bck",sep=".")
+  if(delete.existing & file.exists(cat.path(dir$big,fnm))) { unlink(cat.path(dir$big,fnm))  }
   pcCorMat <- filebacked.big.matrix(nR,nC, backingfile=paste(pref,"bck",sep="."),
                                     backingpath=dir$big, descriptorfile=paste(pref,"dsc",sep="."))
   cat("done\n")
@@ -2795,7 +2815,7 @@ PC.correct <- function(pca.result,bigMat,dir=getwd(),num.pcs=9,n.cores=1,pref="c
   # this simple way works (instead of big for-loop) but hogs memory and is no faster
   # [NB: requires transpose of target corrected big matrix dimensions]
   ### pcCorMat <- apply(origMat,1,PC.fn,nPCs=nPCs,col.sel=sampz)
-  for (dd n 1:split.to)
+  for (dd in 1:split.to)
   {
     x1 <- stepz[dd]; x2 <- stepz[dd+1]-1 #subset row selection
     # use of this 'sub.big.matrix' structure, stops the memory leak behaviour which spirals
@@ -2882,6 +2902,10 @@ PC.correct <- function(pca.result,bigMat,dir=getwd(),num.pcs=9,n.cores=1,pref="c
 #'  in question is larger than 1GB.
 #' @param file.ok whether to accept big.matrix.descriptors or filenames as input for 
 #'  'bigMat'; if T, then anything that works with get.big.matrix(bigMat,dir) is acceptable
+#' @param delete.existing logical, whether to automatically delete filebacked matrices (if they exist) 
+#' before rewriting. This is because of an update since 20th October 2015 where bigmemory won't allow
+#' overwrite of an existing filebacked matrix. If you wish to set this always TRUE or FALSE, use
+#'  options(deleteFileBacked)
 #' @return A big.matrix that is the transpose (rows and columns switched) of the original matrix
 #' @export
 #' @examples 
@@ -2894,7 +2918,7 @@ PC.correct <- function(pca.result,bigMat,dir=getwd(),num.pcs=9,n.cores=1,pref="c
 #' prv.big.matrix(tbM)
 #' unlink(c("t.bigMat.RData","t.bigMat.bck","t.bigMat.dsc","test.bck","test.dsc"))
 big.t <- function(bigMat,dir=NULL,name="t.bigMat",R.descr=NULL,max.gb=NA,
-                  verbose=F,tracker=NA,file.ok=T) {
+                  verbose=F,tracker=NA,file.ok=T,delete.existing=getOption("deleteFileBacked")) {
   #this can be slow!
   if(is.null(R.descr)) { R.descr <- cat.path(dirname(name),name,ext="RData") }
   if(!is.big.matrix(bigMat)) {
@@ -2922,6 +2946,7 @@ big.t <- function(bigMat,dir=NULL,name="t.bigMat",R.descr=NULL,max.gb=NA,
   if(verbose) { cat(" creating",nC,"x",nR,"target matrix,",name,"...") }
   des <- paste(name,"dsc",sep=".")
   bck <- paste(name,"bck",sep=".")
+  if(file.exists(cat.path(dir,bck)) & delete.existing) { unlink(cat.path(dir,bck)) }
   bigTrans <- big.matrix(nrow=nC,ncol=nR, backingfile=bck,
                          backingpath=dir, descriptorfile=des)
   if(verbose) { cat("done\n"); cat("\nAdding names\n") }
