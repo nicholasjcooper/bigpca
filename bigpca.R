@@ -1555,7 +1555,7 @@ import.big.data <- function(input.fn=NULL, dir=getwd(), long=FALSE, rows.fn=NULL
   cat(paste(" created big.matrix description file:",des.fn,"\n"))
   cat(paste(" created big.matrix backing file:",bck.fn,"\n"))
   if(ret.obj) {
-    return(describe(bigVar))
+    return(bigmemory::describe(bigVar))
   } else {
     # convert to RData file regardless as the old descriptor files are now very slow
     big.des <- describe(bigVar)

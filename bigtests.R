@@ -1,6 +1,7 @@
 
 library(testthat)
 library(bigpca)
+library(bigmemory)
 
 setwd("/chiswick/data/ncooper/testingbigpca")
 #library(bigalgebra)
