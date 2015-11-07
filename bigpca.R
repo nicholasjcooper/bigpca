@@ -1523,7 +1523,7 @@ import.big.data <- function(input.fn=NULL, dir=getwd(), long=FALSE, rows.fn=NULL
           options(bigmemory.allow.dimnames=TRUE)
           rownames(bigVar) <- file.rn; cat("updated big.matrix rownames from names in file(s)\n")
           bigmemory::flush(bigVar)
-          big.des <- describe(bigVar)
+          big.des <- bigmemory::describe(bigVar)
           des.fn <- cat.path(dir=dir$big,fn=des.fn,ext="RData")
           save(big.des,file=des.fn)
           warning("Had to change description file to a binary file to update rownames. This can be read in with get.big.matrix() [and should be faster to load]")
@@ -1558,7 +1558,7 @@ import.big.data <- function(input.fn=NULL, dir=getwd(), long=FALSE, rows.fn=NULL
     return(bigmemory::describe(bigVar))
   } else {
     # convert to RData file regardless as the old descriptor files are now very slow
-    big.des <- describe(bigVar)
+    big.des <- bigmemory::describe(bigVar)
     des.fn <- cat.path(dir=dir$big,fn=des.fn,ext="RData")
     save(big.des,file=des.fn)
     return(des.fn)
@@ -1847,7 +1847,7 @@ big.select <- function(bigMat, select.rows=NULL, select.cols=NULL, dir=getwd(),
     bigMat2 <- as.big.matrix(bigMat1, backingfile=basename(bck.fn.o),
                              descriptorfile=basename(des.fn.o),backingpath=dir$big)
     if(verbose) { cat(paste(" matrix descr saved as standard description file:",des.fn.o,"\n")) }
-    descr <- describe(bigMat2)
+    descr <- bigmemory::describe(bigMat2)
   } else {
     #this is slow but creates backing file and will speed up ops later
       ### DELETE EXISTING FILE IF HAS SAME NAME ###
@@ -1878,7 +1878,7 @@ big.select <- function(bigMat, select.rows=NULL, select.cols=NULL, dir=getwd(),
     if(verbose) { cat(" added colnames\n") }
     rownames(bigMat2) <- rownames(bigMat)[to.order.r]  
     if(verbose) { cat(" added rownames\n") }
-    descr <- describe(bigMat2)
+    descr <- bigmemory::describe(bigMat2)
     bigmemory::flush(bigMat2) # hopefully this will ensure the row/colnames are added to the file backing
     if(verbose) { cat(paste(" due to use of deep copy option, recommend only to use descr saved as rbinary description file\n")) }
   }
@@ -2616,7 +2616,7 @@ big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FA
       if(return.loadings)  { nU <- pcs.to.keep } else { nU <- 0 }
       if(!LAP) {
         if(do.fast) {
-          uu <-(system.time(result <- irlba(subMat,nv=pcs.to.keep,nu=nU,matmul=matmul))) 
+          uu <-(system.time(result <- irlba(subMat,nv=pcs.to.keep,nu=nU,mult=matmul))) 
         } else {
           if(use.bigalgebra & verbose) { warning("[without 'bigalgebra' package, PCA runs slowly for large datasets,", 
               "see 'big.algebra.install.help()']\n") }
@@ -2839,7 +2839,7 @@ PC.correct <- function(pca.result,bigMat,dir=getwd(),num.pcs=9,n.cores=1,pref="c
       if(!fl.suc) { cat("flush failed\n") } 
       gc()  # garbage collection
       if(big.extras) {
-        RR <- describe(pcCorMat)
+        RR <- bigmemory::describe(pcCorMat)
         rm(pcCorMat)
         pcCorMat <- attach.big.matrix(RR,path=dir$big)
       }
@@ -2857,7 +2857,7 @@ PC.correct <- function(pca.result,bigMat,dir=getwd(),num.pcs=9,n.cores=1,pref="c
     cat("\nPC-corrected dataset produced:\n")
     prv.big.matrix(pcCorMat,name="pcCorMat")
   }  
-  mat.ref <- describe(pcCorMat)
+  mat.ref <- bigmemory::describe(pcCorMat)
   if(write) {
     if(is.null(big.cor.fn) | !is.character(big.cor.fn)) {
       big.fn <- paste("describePCcorrect",num.pcs,".RData",sep="")
@@ -2985,13 +2985,13 @@ big.t <- function(bigMat,dir=NULL,name="t.bigMat",R.descr=NULL,max.gb=NA,
       # reset memory after every 'max.gb' 1GB chunks to prevent skyrocketing RAM use #
       fl.suc <- bigmemory::flush(bigTrans) ;  if(!fl.suc) { cat("flush failed\n") } ; gc()  
       if(T) {
-        RR <- describe(bigTrans); rm(bigTrans); bigTrans <- attach.big.matrix(RR,path=dir)
+        RR <- bigmemory::describe(bigTrans); rm(bigTrans); bigTrans <- attach.big.matrix(RR,path=dir)
       }
     }
   }
   #})
   if(verbose) { cat(" combining complete, converting result to big matrix\n") }
-  descr <- describe(bigTrans)
+  descr <- bigmemory::describe(bigTrans)
   bigmemory::flush(bigTrans) # hopefully this will ensure the row/colnames are added to the file backing
   
   if(verbose) {
