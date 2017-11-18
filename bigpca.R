@@ -1472,23 +1472,24 @@ import.big.data <- function(input.fn=NULL, dir=getwd(), long=FALSE, rows.fn=NULL
           if(frm$match) {
             lbl <- next.row[1]; 
             row.sel <- match(lbl,cmb.row.list)
-            bigVar[row.sel,nxt.rng] <- next.row[-1]
+            bigVar[row.sel,nxt.rng] <- as(next.row[-1], as.type)
             file.rn[row.sel] <- lbl
           } else {
             if(col.mode) {
               #prv("bigVar",counts=list(cc=cc,nxt.rng=nxt.rng[1]))
               #prv(c("next.row","nxt.rng"))
-              file.rn[cc] <- next.row[1]; bigVar[cc,nxt.rng] <- next.row[-1]
+              file.rn[cc] <- next.row[1]; bigVar[cc,nxt.rng] <- as(next.row[-1], as.type)
             } else {
               selc <- 1:(length(next.row)-1)
-              file.rn[nxt.rng[cc]] <- next.row[1]; bigVar[nxt.rng[cc],selc] <- next.row[-1]
+              file.rn[nxt.rng[cc]] <- next.row[1]; bigVar[nxt.rng[cc],selc] <- as(next.row[-1],as.type)
             }
           }
         } else {
           if(col.mode) {
-            bigVar[cc,nxt.rng] <- next.row
+            bigVar[cc,nxt.rng] <- as(next.row,as.type)
           } else {
-            bigVar[nxt.rng[cc],] <- next.row
+          	prv(bigVar,nxt.rng,cc,next.row)
+            bigVar[nxt.rng[cc],] <- as(next.row,as.type)
           }
         }
       }
