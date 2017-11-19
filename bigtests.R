@@ -1,12 +1,13 @@
 
 library(testthat)
-library(bigpca)
+#library(bigpca)
 library(bigmemory)
-
-setwd("/chiswick/data/ncooper/testingbigpca")
+library(reader)
+source("~/github/bigpca/bigpca.R")
+setwd("/Users/ncooper/testbigpca")
 #library(bigalgebra)
 
-test.size <- 6 # try increasing this number for larger matrices
+test.size <- 5 # try increasing this number for larger matrices
 M <- matrix(runif(10^test.size),ncol=10^(test.size-2)) # normal matrix
 write.table(M,sep="\t",col.names=F,row.names=F,file="functest.txt",quote=F) # no dimnames
 rown <- paste("rs",sample(10:99,nrow(M),replace=T),sample(10000:99999,nrow(M)),sep="")
@@ -182,7 +183,7 @@ t14 <- test_that("MultiFileMatrixDimCols", {
 # restore matrices: 
 Ms <- dMs; Ms2 <- dMs2
 ###################
-all.passed <- is.null(test_that("AllTestsPassed",{ t1
+all.passed <- (test_that("AllTestsPassed",{ t1
                             t2
                             t3
                             t4
