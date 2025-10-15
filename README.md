@@ -50,5 +50,18 @@ R CMD build .
 R CMD check bigpca_*.tar.gz
 ```
 
+### Running the automated tests
+
+The package ships a `testthat` suite that exercises import, thinning, PCA, and
+correction helpers using lightweight synthetic fixtures. To run the tests
+without invoking a full `R CMD check` cycle use:
+
+```r
+devtools::test()  # or testthat::test_dir("tests/testthat")
+```
+
+The suite materialises all file-backed matrices inside temporary directories via
+`withr::local_tempdir()`, so no artefacts are left behind in the working tree.
+
 The `NEWS.md` file records noteworthy changes, including dependency upgrades and
 the removal of the legacy bigalgebra installers.

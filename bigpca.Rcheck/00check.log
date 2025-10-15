@@ -1,0 +1,62 @@
+* using log directory ‘/home/engine/project/bigpca.Rcheck’
+* using R version 4.3.3 (2024-02-29)
+* using platform: x86_64-pc-linux-gnu (64-bit)
+* R was compiled by
+    gcc (Ubuntu 13.2.0-23ubuntu3) 13.2.0
+    GNU Fortran (Ubuntu 13.2.0-23ubuntu3) 13.2.0
+* running under: Ubuntu 24.04.3 LTS
+* using session charset: UTF-8
+* using option ‘--no-manual’
+* checking for file ‘bigpca/DESCRIPTION’ ... OK
+* checking extension type ... Package
+* this is package ‘bigpca’ version ‘1.1’
+* checking package namespace information ... OK
+* checking package dependencies ... OK
+* checking if this is a source package ... OK
+* checking if there is a namespace ... OK
+* checking for .dll and .exe files ... OK
+* checking for hidden files and directories ... OK
+* checking for portable file names ... OK
+* checking for sufficient/correct file permissions ... OK
+* checking whether package ‘bigpca’ can be installed ... WARNING
+Found the following significant warnings:
+  Note: break used in wrong context: no loop is visible 
+  Warning: replacing previous import ‘reader::rmv.ext’ by ‘NCmisc::rmv.ext’ when loading ‘bigpca’
+  Warning: replacing previous import ‘reader::get.ext’ by ‘NCmisc::get.ext’ when loading ‘bigpca’
+  Warning: replacing previous import ‘reader::cat.path’ by ‘NCmisc::cat.path’ when loading ‘bigpca’
+See ‘/home/engine/project/bigpca.Rcheck/00install.out’ for details.
+Information on the location(s) of code generating the ‘Note’s can be
+obtained by re-running with environment variable R_KEEP_PKG_SOURCE set
+to ‘yes’.
+* checking installed package size ... OK
+* checking package directory ... OK
+* checking DESCRIPTION meta-information ... OK
+* checking top-level files ... OK
+* checking for left-over files ... OK
+* checking index information ... OK
+* checking package subdirectories ... OK
+* checking R files for non-ASCII characters ... OK
+* checking R files for syntax errors ... OK
+* checking whether the package can be loaded ... OK
+* checking whether the package can be loaded with stated dependencies ... OK
+* checking whether the package can be unloaded cleanly ... OK
+* checking whether the namespace can be loaded with stated dependencies ... OK
+* checking whether the namespace can be unloaded cleanly ... OK
+* checking loading without being on the library search path ... OK
+* checking startup messages can be suppressed ... OK
+* checking dependencies in R code ... OK
+* checking S3 generic/method consistency ... OK
+* checking replacement functions ... OK
+* checking foreign function calls ... OK
+* checking R code for possible problems ... OK
+* checking Rd files ... OK
+* checking Rd metadata ... OK
+* checking Rd cross-references ... OK
+* checking for missing documentation entries ... OK
+* checking for code/documentation mismatches ... OK
+* checking Rd \usage sections ... OK
+* checking Rd contents ... OK
+* checking for unstated dependencies in examples ... OK
+* checking examples ... OK
+* DONE
+Status: 1 WARNING

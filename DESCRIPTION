@@ -28,7 +28,8 @@ Imports:
     bigmemory (>= 4.6.1),
     irlba (>= 2.3.5)
 Suggests:
-    testthat (>= 3.0.0)
+    testthat (>= 3.0.0),
+    withr
 Encoding: UTF-8
 LazyData: false
 SystemRequirements: BLAS libraries such as OpenBLAS, Accelerate, or ATLAS when using
