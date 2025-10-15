@@ -1,2 +1,12 @@
 .DS_Store
-
+.Rhistory
+.Rapp.history
+.Renviron
+.Rproj.user/
+*.Rproj
+*.RData
+*.Rds
+*.swp
+renv/library/
+renv/staging/
+renv/python/
