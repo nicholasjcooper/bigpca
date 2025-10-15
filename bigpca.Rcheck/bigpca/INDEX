@@ -1,0 +1,33 @@
+PC.correct              Correct a big.matrix by principle components
+big.PCA                 PCA/Singular Value Decomposition for big.matrix
+big.algebra.install.help
+                        Attempt to install the bigalgebra package
+big.select              Select a subset of a big.matrix
+big.t                   Transpose function for big.matrix objects
+bigpca-package          PCA, Transpose and Multicore Functionality for
+                        'big.matrix' Objects
+bmcapply                A multicore 'apply' function for big.matrix
+                        objects
+clear_active_bms        Function to clear big.matrix objects in the
+                        calling environment
+estimate.eig.vpcs       Estimate the variance percentages for
+                        uncalculated eigenvalues
+generate.test.matrix    Generate a test matrix of random data
+get.big.matrix          Retrieve a big.matrix object
+import.big.data         Load a text file into a big.matrix object
+pca.scree.plot          Make scree plots for any PCA
+prv.big.matrix          Tidier display function for big matrix objects
+quick.elbow             Quickly estimate the 'elbow' of a scree plot
+                        (PCA)
+quick.pheno.assocs      Quick association tests for phenotype
+select.least.assoc      Select subset of rows least associated with a
+                        categorical variable
+subcor.select           Selection of the most correlated variable
+                        subset
+subpc.select            Selection of a representative variable subset
+svn.bigalgebra.install
+                        Attempt to install the bigalgebra package using
+                        SVN
+thin                    Reduce one dimension of a large matrix in a
+                        strategic way
+uniform.select          Derive a subset of a large dataset
