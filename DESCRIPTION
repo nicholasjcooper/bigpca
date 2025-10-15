@@ -1,0 +1,38 @@
+Package: bigpca
+Type: Package
+Title: PCA, Transpose and Multicore Functionality for 'big.matrix' Objects
+Version: 1.2.0
+Date: 2024-10-15
+Authors@R: c(
+    person(given = "Nicholas", family = "Cooper", role = c("aut", "cre"),
+           email = "njcooper@gmx.co.uk"),
+    person(given = "ctonew", family = "Contributors", role = "ctb",
+           comment = "Modernised dependency and tooling configuration")
+  )
+Description: Provides PCA workflows, thinning helpers, and import utilities for
+    the 'bigmemory' stack, enabling large scale principal component analysis on
+    file-backed matrices. The package wraps native 'big.matrix' operations,
+    offers custom IRLBA integrations, and includes pragmatic utilities for
+    previewing and restructuring large matrices.
+License: GPL (>= 2)
+Depends: R (>= 4.1)
+Imports:
+    methods,
+    grDevices,
+    graphics,
+    stats,
+    utils,
+    parallel,
+    reader (>= 1.0.10),
+    NCmisc (>= 1.1.7),
+    bigmemory (>= 4.6.1),
+    irlba (>= 2.3.5)
+Suggests:
+    testthat (>= 3.0.0)
+Encoding: UTF-8
+LazyData: false
+SystemRequirements: BLAS libraries such as OpenBLAS, Accelerate, or ATLAS when using
+    optional bigmemory acceleration
+Collate:
+    'bigpca.R'
+    'irlba2.R'

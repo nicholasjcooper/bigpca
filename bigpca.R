@@ -1,10 +1,10 @@
 ###NAMESPACE ADDITIONS###
-# Depends: R (>= 3.0), grDevices, graphics, stats, utils, reader (>= 1.0.1), NCmisc (>= 1.1), bigmemory (>= 4.0.0), biganalytics
-# Imports: parallel, methods, bigmemory.sri, irlba
-# Suggests:
+# Depends: R (>= 4.1), grDevices, graphics, stats, utils, reader (>= 1.0.10), NCmisc (>= 1.1.7), bigmemory (>= 4.6.1)
+# Imports: parallel, methods, irlba
+# Suggests: testthat (>= 3.0.0)
 # importFrom(parallel, mclapply)
 # importFrom(irlba, irlba)
-# import(methods, bigmemory.sri, grDevices, graphics, stats, utils, reader, NCmisc, bigmemory, biganalytics)
+# import(methods, grDevices, graphics, stats, utils, reader, NCmisc, bigmemory)
 ###END NAMESPACE###
 
 
@@ -58,25 +58,25 @@ manage.test.files <- function(start=TRUE,keepers=NULL) {
 #' @examples
 #' clear_active_bms(ignore.os=TRUE, only.culprits=FALSE, list.only=TRUE) # list those in memory
 clear_active_bms <- function(ignore.os=FALSE, verbose=TRUE, only.culprits=TRUE, list.only=FALSE) {
-	culprits <- c("bM","bM2","bmat","bmat2","tbM","sel","lmat")
-	target.env <- parent.env(environment())
-	list.out <- NULL
-	if(.Platform$OS.type=="windows" | ignore.os) {
-		ll <- ls(name= target.env)
-		for (cc in 1:length(ll)) {
-			if((do.call("is", args=list(get(ll[cc]))))[1]=="big.matrix") { 
-				if(ll[cc] %in% culprits | !only.culprits) {
-					if(list.only) {
-						list.out <- c(list.out,ll[cc])
-					} else {
-						if(verbose) { message("removing big.matrix: ",ll[cc]) }
-						do.call("rm",args=list(ll[cc], envir= target.env)) 
-					}
-				}
-			} 
-		}
-	}
-	if(list.only) { return(list.out) }
+    culprits <- c("bM","bM2","bmat","bmat2","tbM","sel","lmat")
+    target.env <- parent.env(environment())
+    list.out <- NULL
+    if(.Platform$OS.type=="windows" | ignore.os) {
+        ll <- ls(name= target.env)
+        for (cc in 1:length(ll)) {
+            if((do.call("is", args=list(get(ll[cc]))))[1]=="big.matrix") { 
+                if(ll[cc] %in% culprits | !only.culprits) {
+                    if(list.only) {
+                        list.out <- c(list.out,ll[cc])
+                    } else {
+                        if(verbose) { message("removing big.matrix: ",ll[cc]) }
+                        do.call("rm",args=list(ll[cc], envir= target.env)) 
+                    }
+                }
+            } 
+        }
+    }
+    if(list.only) { return(list.out) }
 }
 
 
@@ -443,7 +443,7 @@ quick.elbow <- function(varpc,low=.08,max.pc=.9) {
     elbow <- length(ee) 
   }
   if(tail(cumsum(ee[1:elbow]),1)>max.pc) {
-  	elbow <- which(cumsum(ee)>max.pc)[1]-1
+      elbow <- which(cumsum(ee)>max.pc)[1]-1
   }
   if(elbow<1) {
     warning("elbow calculation failed, return zero")
@@ -587,11 +587,17 @@ bmcapply <- function(bigMat,MARGIN,FUN,dir=NULL,by=200,n.cores=1,
       }
       dm <- 1
     }
-    if(convert | is.null(dim(next.block))) { 
+    if(convert || is.null(dim(next.block))) {
       next.block <- bigmemory::as.matrix(next.block)
 #      next.block <- next.block[1:nrow(next.block),1:ncol(next.block)]  # conv to standard matrix if req'd
-    } 
-    if(!use.apply) { out <- func(next.block,...)  } else {  out <- biganalytics::apply(next.block,dm,func,...) }
+    } else if (use.apply && inherits(next.block, "big.matrix")) {
+      next.block <- bigmemory::as.matrix(next.block)
+    }
+    if(!use.apply) {
+      out <- func(next.block,...)
+    } else {
+      out <- base::apply(next.block, dm, func, ...)
+    }
     rm(next.block) ; gc() # remove the sub-matrix pointer each iteration  
     return(out)
   }
@@ -669,136 +675,31 @@ choose.comb.fn <- function(result.list,stepz) {
 }
 
 
-#' Attempt to install the bigalgebra package using SVN
+#' Retired bigalgebra installation helpers
 #'
-#' The bigalgebra package for efficient algebraic operations on big.matrix objects
-#' has now been submitted to CRAN, so this function is now mostly redundant.
-#' It used to require installation from SVN and some tinkering, such as changing the 
-#' description file to add the dependency, and linking 'BH' to allow the package to work.
-#' This may still be required on older versions of R that do not support the bigalgebra
-#' package uploaded to CRAN, but I cannot confirm this.
-#' This function automatically performs these corrections. First, it attempts to check-out
-#'  the latest version of bigalgebra from SVN version management system and then corrects 
-#' the description file, then tries to install the package.
-#' Note you must also have 'BLAS' installed on your system to utilise this package
-#' effectively. PCA functions in the present package are better with bigalgebra installed,
-#' but will still run without it. For more information on installation alternatives, 
-#' type big.algebra.install.help().
-#' Returns TRUE if bigalgebra is already installed.
-#' @seealso \code{\link{big.algebra.install.help}}
-#' @param verbose whether to report on installation progress/steps
-#' @return If SVN is installed on your system, along with BLAS, this function should install the bigalgebra package,
-#'  else it will return instructions on what to do to fix the issue 
+#' Legacy helpers for installing \pkg{bigalgebra} from SVN have been removed.
+#' The Big Memory stack is now available directly from CRAN, and manual
+#' installation instructions are documented in the package README alongside
+#' guidance for enabling optimised BLAS libraries when needed.
+#'
+#' @param ... ignored.
+#' @return These helpers are defunct and will raise an error explaining how to
+#'   proceed.
 #' @export
-#' @examples
-#' \donttest{ svn.bigalgebra.install(TRUE) }
-svn.bigalgebra.install <- function(verbose=FALSE) {
-  # this is a major hack to install bigalgebra from SVN,
-  # manually modifying the DESCRIPTION file to depend and link to 'BH'
-  warning("bigalgebra is now on CRAN and so this function should be unnecessary")
-  cur.dir <- getwd()
-  cat("\nAttempting to install the bigalgebra package using SVN")
-  if(verbose) { cat("\n") } else { cat(" .") }
-  #my.fn <- file("bigalgebra.install.log",open="w")
-  #sink(file=my.fn,type="message")
-  if(!check.linux.install("svn")) { return(F) }
-  nons <- cat.path(getwd(),"tempfdsg345t")
-  dir.create(nons)
-  setwd(nons)
-  system("svn checkout svn://scm.r-forge.r-project.org/svnroot/bigmemory",
-         intern=!verbose, ignore.stderr=!verbose)
-  cat(".")
-  setwd("./bigmemory/pkg")
-  a.mod <- F
-  des.fn <- "./bigalgebra/DESCRIPTION"
-  if(is.file(des.fn,dir=getwd())) {
-    DES <- readLines(des.fn); cat(".")
-    l1 <- grep("Depends: bigmemory",DES)
-    l2 <- grep("LinkingTo: bigmemory",DES)
-    if(length(l1)==1 & length(l2)==1) {
-      if(length(grep("BH",l1))==0) {
-        if(verbose) { cat("modifying bigalgebra DESCRIPTION file to depend on BH\n") }
-        DES[l1] <- gsub("Depends: bigmemory","Depends: BH, bigmemory",DES[l1])
-        a.mod <- T; cat(".")
-      }
-      if(length(grep("BH",l2))==0) {
-        if(verbose) { cat("modifying bigalgebra DESCRIPTION file to link to BH\n") }
-        DES[l2] <- gsub("LinkingTo: bigmemory","LinkingTo: BH, bigmemory",DES[l2])
-        a.mod <- T  ; cat(".")
-      }
-    }
-    if(a.mod) {
-      writeLines(DES,con=des.fn); cat(".")
-    }
-    system("REFBLAS=1 R CMD INSTALL bigalgebra",intern=!verbose, ignore.stderr=!verbose)
-    cat(". done\n")
-    suc <- T
-  } else {
-    warning("bigalgebra DESCRIPTION file not found, installation failed")
-    suc <- F
-  }
-  setwd(nons)
-  system("rm -rf bigmemory", intern=!verbose, ignore.stderr=!verbose)
-  setwd(cur.dir)
-  unlink(nons)
-  return(suc)
+svn.bigalgebra.install <- function(...) {
+  stop(
+    "svn.bigalgebra.install() has been retired. See README.md for current bigmemory/BLAS guidance.",
+    call. = FALSE
+  )
 }
 
-
-#' Attempt to install the bigalgebra package
-#'
-#' The bigalgebra package  has now been submitted to CRAN, so this function is now 
-#' mostly redundant. It may still be useful for some, and it will still work,
-#' as the first step to check CRAN, so at the risk of affecting existing code
-#' I will leave the function here for now.
-#' This function attempts to see whether bigalgebra is installed, then checks CRAN in case it 
-#' has been updated, then check RForge. Failing that, it will attempt to install
-#' using svn.bigalgebra.install(). Returns TRUE if already installed.
-#' The bigalgebra package for efficient algebraic operations on big.matrix objects
-#' was not currently on CRAN, and used to fail a check on dependencies. Changing the 
-#' description file was needed to add the dependency, and linking 'BH' allow3e the package to work.
-#' This function attempts to check-out the latest version of bigalgebra from SVN
-#' version management system and corrects the description file then installs.
-#' Note you must also have 'BLAS' installed on your system to utilise this package
-#' effectively. PCA functions in the present package are better with bigalgebra installed,
-#' but will still run without it. For more information on installation alternatives, 
-#' type big.algebra.install.help().
-#' @seealso \code{\link{svn.bigalgebra.install}}
-#' @param verbose whether to report on installation progress/steps
-#' @return If bigalgebra is already installed, or can be installed from RForge or SVN,
-#'  this should load or install the bigalgebra package,
-#'  else will return instructions on what to do next to fix the issue 
+#' @rdname svn.bigalgebra.install
 #' @export
-#' @examples 
-#' \donttest{ big.algebra.install.help(TRUE) }
-big.algebra.install.help <- function(verbose=FALSE) {
-  ## bigalgebra package doesn't install easily using the regular R way of installing packages
-  # here try a simple way that might work, and if not, provide links and instructions to 
-  # guide a manual installation
-  try({ if(do.call("require",args=list("bigalgebra"))) { return(T) } })
-  if("bigalgebra" %in% search.cran("big")[[1]]) { must.use.package("bigalgebra",T); return() }
-  warning("bigalgebra is now on CRAN and so this function should be unnecessary")
-  cat("\nbigalgebra installation not found, will attempt to install now, but it can be tricky\n")
-  do.call("install.packages",args=list("bigalgebra", repos="http://R-Forge.R-project.org"))
-  if(do.call("require",args=list("bigalgebra"))) {
-    cat("bigalgebra seems to have installed successfully\n")
-    return(T)
-  } else {
-    tt <- svn.bigalgebra.install(verbose=verbose)
-    if(!tt) {
-      cat("standard bigalgebra installation has failed\n")
-      cat("go to: http://connectir.projects.nitrc.org/download/\n")
-      cat("for installation tips\n")
-      cat("can use a command line like: REFBLAS=1 R CMD INSTALL bigalgebra\n")
-      cat("where bigalgebra is the source package (for example, bigalgebra_0.8.1.tar.gz)\n")
-      cat("downloaded from https://r-forge.r-project.org/R/?group_id=556\n")
-      cat("Your system may also be missing a BLAS installation, in which case you might try\n")
-      cat("installing OpenBLAS; see instructions at http://xianyi.github.com/OpenBLAS/\n")
-      return(F)
-    } else {
-      return(T)
-    }
-  }
+big.algebra.install.help <- function(...) {
+  stop(
+    "big.algebra.install.help() has been retired. See README.md for current bigmemory/BLAS guidance.",
+    call. = FALSE
+  )
 }
 
 
@@ -1540,7 +1441,7 @@ import.big.data <- function(input.fn=NULL, dir=getwd(), long=FALSE, rows.fn=NULL
           if(col.mode) {
             bigVar[cc,nxt.rng] <- as(next.row,as.type)
           } else {
-          	prv(bigVar,nxt.rng,cc,next.row)
+              prv(bigVar,nxt.rng,cc,next.row)
             bigVar[nxt.rng[cc],] <- as(next.row,as.type)
           }
         }
@@ -2026,8 +1927,8 @@ subpc.select <- function(bigMat,keep=.05,rows=TRUE,dir=getwd(),random=TRUE,ram.g
   ## do it here
   sub.mat <- bigMat[rc[[1]],rc[[2]]]
   #prv.large(sub.mat)
-  pt <- "package:"; pkgset <- gsub(pt,"",search()[grep(pt,search())])
-  uba <- (all(c("irlba","bigalgebra") %in% pkgset))
+  irlba_available <- requireNamespace("irlba", quietly = TRUE)
+  uba <- irlba_available
   if(rows) {
     quick.pc <- big.PCA(sub.mat,pcs.to.keep=NA,use.bigalgebra=uba,...)
   } else {
@@ -2495,12 +2396,11 @@ cut_fac <- function(N,n.grps,start.zero=FALSE,factor=TRUE) {
 #' @param pcs.fn name of the binary when save.pcs=TRUE
 #' @param return.loadings logical, whether to return the 'loadings' (or the other singular vector when SVD=T); could result in a speed decrease
 #' @param verbose whether to display detailed progress of the PCA
-#' @param use.bigalgebra logical, whether to use the bigalgebra package for algebraic operations. For large
-#'  datasets bigalgebra should provide a substantial speedup, and also facilitates use of larger matrices. This 
-#'  relies on having bigalgebra installed and loaded, which requires some manual configuration as bigalgebra
-#'  is not currently available on CRAN, but only SVN and RForge. See svn.bigalgebra.install() or big.algebra.install.help()
-#'  Default is to use bigalgebra if available (TRUE), but setting this FALSE prevents the check for bigalgebra which would be
-#'  cleaner if you know that you don't have it installed.
+#' @param use.bigalgebra logical, whether to use the optional \pkg{bigalgebra}
+#'  package for algebraic operations. When available alongside an optimised BLAS
+#'  implementation it can accelerate work on very large matrices. Installation
+#'  tips for optional acceleration are documented in the README. Set this to
+#'  FALSE to skip bigalgebra checks when you know it is unavailable.
 #' @param ... if thin is TRUE, then these should be any additional arguments for thin(), e.g, 'pref', 'keep', 'how', etc.i
 #' @param delete.existing logical, whether to automatically delete filebacked matrices (if they exist) 
 #' before rewriting. This is because of an update since 20th October 2015 where bigmemory won't allow
@@ -2675,20 +2575,31 @@ big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FA
       Evalues <- result$values
       loadings <- NULL
     } else {
-      pt <- "package:"; pkgset <- gsub(pt,"",search()[grep(pt,search())])
-      do.fast <- (!LAP & (all(c("irlba","bigalgebra") %in% pkgset)))
-      if(!use.bigalgebra) { do.fast <- F }
+      irlba_available <- requireNamespace("irlba", quietly = TRUE)
+      bigalgebra_available <- use.bigalgebra && requireNamespace("bigalgebra", quietly = TRUE)
+      if(use.bigalgebra && !biganalgebra_available && verbose) {
+        message("bigalgebra not detected; using base matrix multiplications. See README.md for optional acceleration tips.")
+      }
+      do.fast <- (!LAP && use.bigalgebra && irlba_available)
       if(verbose) {
         cat(" PCA by singular value decomposition...") # La.svd gives result with reversed dims. (faster?)
-      } 
+      }
       if(return.loadings)  { nU <- pcs.to.keep } else { nU <- 0 }
       if(!LAP) {
         if(do.fast) {
-          uu <-(system.time(result <- irlba(subMat,nv=pcs.to.keep,nu=nU,mult=matmul))) 
+          irlba_args <- list(A = subMat, nv = pcs.to.keep, nu = nU)
+          irlba_formals <- names(formals(irlba::irlba))
+          if("matmul" %in% irlba_formals) {
+            irlba_args$matmul <- matmul
+          } else if("mult" %in% irlba_formals) {
+            irlba_args$mult <- matmul
+          }
+          uu <- (system.time(result <- do.call(irlba::irlba, irlba_args)))
         } else {
-          if(use.bigalgebra & verbose) { warning("[without 'bigalgebra' package, PCA runs slowly for large datasets,", 
-              "see 'big.algebra.install.help()']\n") }
-          uu <-(system.time(result <- svd(subMat,nv=pcs.to.keep,nu=nU)))
+          if(verbose && use.bigalgebra && !irlba_available) {
+            warning("irlba is not installed; falling back to base::svd. See README.md for dependency setup.\n")
+          }
+          uu <- (system.time(result <- svd(subMat,nv=pcs.to.keep,nu=nU)))
         }
         if(verbose) { cat("took",round(uu[3]/60,1),"minutes\n") }
         PCs <- result$v[,1:pcs.to.keep]
