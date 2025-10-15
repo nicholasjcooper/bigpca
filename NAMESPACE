@@ -1,0 +1,4 @@
+exportPattern("^[[:alpha:]]+")
+import(methods, grDevices, graphics, stats, utils, reader, NCmisc, bigmemory)
+importFrom(parallel, mclapply)
+importFrom(irlba, irlba)

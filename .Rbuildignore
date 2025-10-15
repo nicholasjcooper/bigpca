@@ -1,2 +1,5 @@
 .DS_Store
 .Rapp.history
+^renv$
+^renv\.lock$
+^NEWS\.md$

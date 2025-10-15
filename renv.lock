@@ -1,0 +1,48 @@
+{
+  "R": {
+    "Version": "4.3.2",
+    "Repositories": [
+      {
+        "Name": "CRAN",
+        "URL": "https://cloud.r-project.org"
+      }
+    ]
+  },
+  "Packages": {
+    "bigmemory": {
+      "Package": "bigmemory",
+      "Version": "4.6.1",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "0000000000000000000000000000000000000000"
+    },
+    "irlba": {
+      "Package": "irlba",
+      "Version": "2.3.5",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "0000000000000000000000000000000000000000"
+    },
+    "NCmisc": {
+      "Package": "NCmisc",
+      "Version": "1.1.7",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "0000000000000000000000000000000000000000"
+    },
+    "reader": {
+      "Package": "reader",
+      "Version": "1.0.10",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "0000000000000000000000000000000000000000"
+    },
+    "renv": {
+      "Package": "renv",
+      "Version": "1.0.7",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "0000000000000000000000000000000000000000"
+    }
+  }
+}
