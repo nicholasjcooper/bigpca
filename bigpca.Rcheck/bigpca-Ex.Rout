@@ -531,7 +531,7 @@ Warning in bmcapply(bM, 2, sd, combine.fn = weight.means.to.scalar) :
 > M <- matrix(runif(10^test.size),ncol=10^(test.size-2)) # normal matrix
 > system.time(bmcapply(M,2,sd,n.cores=2)) # use up to 2 cores if available
    user  system elapsed 
-  0.240   0.189   0.529 
+  0.202   0.219   0.514 
 > system.time(apply(M,2,sd)) # 
    user  system elapsed 
    0.01    0.00    0.01 
@@ -834,7 +834,7 @@ Row# rownames     col1     col2  .....    col100
 > ii <- import.big.data(in.fn,cols.fn="colnames.txt",rows.fn="rownames.txt", pref="p1")
 Reading column and row names...
  reading column names from colnames.txt 
- reading row names from /tmp/RtmpT3QIPA/rownames.txt 
+ reading row names from /tmp/RtmpHAlPrw/rownames.txt 
  found 100 column names and 100 marker names
 
 Creating big matrix object to store group data
@@ -907,7 +907,7 @@ updated big.matrix rownames from names in file(s)
 Warning in import.big.data(in.fn, pref = "p3") :
   Had to change description file to a binary file to update rownames. This can be read in with get.big.matrix() [and should be faster to load]
 
- created big.matrix description file: /tmp/RtmpT3QIPA/p3.RData 
+ created big.matrix description file: /tmp/RtmpHAlPrw/p3.RData 
  created big.matrix backing file: p3.bck 
 
 Big matrix; 'p3.RData', with: 100 rows, 100 columns
@@ -942,7 +942,7 @@ Loading text data into big matrix object:
 ..................................................
 Warning in import.big.data(in.fn, col.names = coln, row.names = rown, pref = "p4") :
   rownames didn't match what was in filecheck the list in the file at:
- /tmp/RtmpT3QIPA/p4_file_rowname_list_check_this.txt
+ /tmp/RtmpHAlPrw/p4_file_rowname_list_check_this.txt
 
  file preview:
  [1] "rs6370080" "rs3731547" "rs3524723" "rs2296591" "rs7763176" "rs4086604"
@@ -972,7 +972,7 @@ Row#  rownames ID390841 ID189792  .....  ID971759
 > ii <- import.big.data(in.fn,cols.fn="colnames.txt",rows.fn="rownames.txt", pref="p5")
 Reading column and row names...
  reading column names from colnames.txt 
- reading row names from /tmp/RtmpT3QIPA/rownames.txt 
+ reading row names from /tmp/RtmpHAlPrw/rownames.txt 
  found 100 column names and 100 marker names
 
 Creating big matrix object to store group data
@@ -1070,9 +1070,9 @@ Row#  rownames ID390841 ID189792  .....  ID971759
 > # Now test the import using colnames and rownames files
 > ii <- import.big.data(infs, col.names="colnames.txt",rows.fn=rowfs, pref="p7")
 no column names specified
- reading row names from /tmp/RtmpT3QIPA/rn1.txt 
- reading row names from /tmp/RtmpT3QIPA/rn2.txt 
- reading row names from /tmp/RtmpT3QIPA/rn3.txt 
+ reading row names from /tmp/RtmpHAlPrw/rn1.txt 
+ reading row names from /tmp/RtmpHAlPrw/rn2.txt 
+ reading row names from /tmp/RtmpHAlPrw/rn3.txt 
 reading a single varset from 3 source files.
  found 100 column names and 100 marker names
 
@@ -3630,7 +3630,7 @@ rs77792 rs48313 rs10907 rs43836 rs96438 rs52445 rs23774 rs91142 rs68100 rs60128
 th4.dsc 
   "th4" 
 > print(lmat)
-[1] "/tmp/RtmpT3QIPA/th4.RData"
+[1] "/tmp/RtmpHAlPrw/th4.RData"
 > prv.big.matrix(lmat)
 
 Big matrix; 'th4.RData', with: 10 rows, 1000 columns
@@ -3751,7 +3751,7 @@ NULL
 > cleanEx()
 > options(digits = 7L)
 > base::cat("Time elapsed: ", proc.time() - base::get("ptime", pos = 'CheckExEnv'),"\n")
-Time elapsed:  9.003 0.456 9.997 0.588 0.373 
+Time elapsed:  8.3 0.408 9.233 0.517 0.418 
 > grDevices::dev.off()
 null device 
           1 

@@ -9,7 +9,324 @@
 
 
 .onLoad <- function(libname, pkgname) {
-  options(deleteFileBacked=TRUE) # generally will be nice to set this to TRUE to avoid be prevented from overwriting files
+  invisible(TRUE)
+}
+
+# Internal helpers for modernised PCA workflows --------------------------------
+
+`%||%` <- function(x, y) {
+  if (is.null(x) || (length(x) == 1L && is.na(x))) y else x
+}
+
+.bigpca_logger <- function(verbose = FALSE) {
+  force(verbose)
+  function(level, fmt, ...) {
+    level <- toupper(level)
+    msg <- if (length(list(...))) sprintf(fmt, ...) else fmt
+    switch(
+      level,
+      ERROR = stop(msg, call. = FALSE),
+      WARN = { warning(msg, call. = FALSE); invisible() },
+      INFO = { if (verbose) message(sprintf("[INFO] %s", msg)); invisible() },
+      DEBUG = { if (verbose) message(sprintf("[DEBUG] %s", msg)); invisible() },
+      { if (verbose) message(sprintf("[%s] %s", level, msg)); invisible() }
+    )
+  }
+}
+
+.bigpca_validate_logical_scalar <- function(x, name) {
+  if (!is.logical(x) || length(x) != 1L || is.na(x)) {
+    stop(sprintf("%s must be a non-missing logical scalar.", name), call. = FALSE)
+  }
+  x
+}
+
+.bigpca_validate_numeric_scalar <- function(x, name, lower = -Inf, upper = Inf, allow_na = FALSE, integer = FALSE) {
+  if (!is.numeric(x) || length(x) != 1L || (!allow_na && is.na(x))) {
+    stop(sprintf("%s must be a numeric scalar.", name), call. = FALSE)
+  }
+  if (!allow_na && (x < lower || x > upper)) {
+    stop(sprintf("%s must be between %s and %s.", name, lower, upper), call. = FALSE)
+  }
+  if (integer && !is.na(x) && abs(x - round(x)) > .Machine$double.eps^0.5) {
+    stop(sprintf("%s must be an integer value.", name), call. = FALSE)
+  }
+  x
+}
+
+.bigpca_resolve_dirs <- function(dir, elements = c("big", "pc")) {
+  if (exists("validate.dir.for", mode = "function")) {
+    return(do.call("validate.dir.for", list(dir = dir, elements = elements, warn = FALSE)))
+  }
+  if (is.list(dir) && all(elements %in% names(dir))) {
+    return(dir[elements])
+  }
+  if (!is.character(dir) || length(dir) != 1L) {
+    stop(
+      sprintf("dir must be a character scalar or a list containing entries for: %s", paste(elements, collapse = ", ")),
+      call. = FALSE
+    )
+  }
+  resolved <- dir %||% getwd()
+  dirs_list <- as.list(rep(resolved, length(elements)))
+  names(dirs_list) <- elements
+  dirs_list
+}
+
+.bigpca_resolve_input_matrix <- function(x, dirs, logger = .bigpca_logger(FALSE)) {
+  if (inherits(x, "big.matrix")) {
+    bm <- x
+  } else if (inherits(x, "big.matrix.descriptor")) {
+    bm <- bigmemory::attach.big.matrix(x)
+  } else if (is.character(x) && length(x) == 1L) {
+    bm <- get.big.matrix(x, dir = dirs)
+  } else if (is.matrix(x)) {
+    storage.mode(x) <- "numeric"
+    return(list(
+      type = "matrix",
+      matrix = x,
+      nrow = nrow(x),
+      ncol = ncol(x),
+      rownames = rownames(x),
+      colnames = colnames(x)
+    ))
+  } else {
+    stop("Unsupported matrix input. Provide a matrix, big.matrix, descriptor, or descriptor filepath.", call. = FALSE)
+  }
+  if (!inherits(bm, "big.matrix")) {
+    stop("Input is not a valid big.matrix instance.", call. = FALSE)
+  }
+  list(
+    type = "big.matrix",
+    bigmatrix = bm,
+    nrow = nrow(bm),
+    ncol = ncol(bm),
+    rownames = rownames(bm),
+    colnames = colnames(bm)
+  )
+}
+
+.bigpca_materialize_matrix <- function(input) {
+  if (identical(input$type, "matrix")) {
+    mat <- input$matrix
+  } else {
+    mat <- bigmemory::as.matrix(input$bigmatrix)
+  }
+  storage.mode(mat) <- "numeric"
+  if (!is.null(input$rownames)) {
+    rownames(mat) <- input$rownames
+  }
+  if (!is.null(input$colnames)) {
+    colnames(mat) <- input$colnames
+  }
+  list(
+    type = "matrix",
+    matrix = mat,
+    nrow = nrow(mat),
+    ncol = ncol(mat),
+    rownames = rownames(mat),
+    colnames = colnames(mat)
+  )
+}
+
+.bigpca_extract_scores <- function(pca_result, dirs, logger = .bigpca_logger(FALSE)) {
+  if (inherits(pca_result, "bigpca_result")) {
+    return(pca_result$scores)
+  }
+  if (is.list(pca_result)) {
+    candidate <- pca_result[c("scores", "PCs")]
+    candidate <- candidate[vapply(candidate, is.matrix, logical(1))]
+    if (length(candidate) > 0) {
+      return(candidate[[1]])
+    }
+    matrices <- Filter(is.matrix, pca_result)
+    if (length(matrices) > 0) {
+      return(matrices[[1]])
+    }
+  }
+  if (is.matrix(pca_result)) {
+    return(pca_result)
+  }
+  if (is.character(pca_result) && length(pca_result) == 1L) {
+    candidate_files <- c(pca_result, cat.path(dirs$pc, pca_result))
+    file_path <- candidate_files[file.exists(candidate_files)][1]
+    if (is.na(file_path)) {
+      stop(sprintf("PCA result file '%s' does not exist.", pca_result), call. = FALSE)
+    }
+    env <- new.env(parent = emptyenv())
+    load(file_path, envir = env)
+    if (exists("result", envir = env) && inherits(env$result, "bigpca_result")) {
+      return(env$result$scores)
+    }
+    if (exists("PCs", envir = env)) {
+      return(get("PCs", envir = env))
+    }
+    matrices <- Filter(is.matrix, as.list(env))
+    if (length(matrices) > 0) {
+      return(matrices[[1]])
+    }
+    stop(sprintf("No PCA score matrix found in '%s'.", file_path), call. = FALSE)
+  }
+  stop("Unable to interpret 'pca.result'. Provide a bigpca_result object, a matrix of scores, or a saved PCA file.", call. = FALSE)
+}
+
+.bigpca_preprocess_matrix <- function(mat, center) {
+  if (!is.matrix(mat)) {
+    stop("Internal error: expected a numeric matrix for preprocessing.", call. = FALSE)
+  }
+  storage.mode(mat) <- "numeric"
+  n_features <- nrow(mat)
+  center_vec <- NULL
+  centered <- FALSE
+  if (isTRUE(center)) {
+    center_vec <- rowMeans(mat, na.rm = TRUE)
+    mat <- mat - center_vec
+    centered <- TRUE
+  } else if (isFALSE(center)) {
+    center_vec <- rowMeans(mat, na.rm = TRUE)
+  } else if (is.numeric(center)) {
+    if (length(center) != n_features) {
+      stop("When supplying a numeric centre vector it must have length equal to the number of rows in the input matrix.", call. = FALSE)
+    }
+    center_vec <- center
+    mat <- mat - center_vec
+    centered <- TRUE
+  } else {
+    stop("center must be logical or a numeric vector matching the number of rows in the input matrix.", call. = FALSE)
+  }
+  if (anyNA(mat)) {
+    idx <- which(is.na(mat), arr.ind = TRUE)
+    if (centered) {
+      mat[idx] <- 0
+    } else {
+      replacements <- center_vec[idx[, 1]]
+      replacements[is.na(replacements)] <- 0
+      mat[idx] <- replacements
+    }
+  }
+  list(matrix = mat, center = if (centered) center_vec else NULL, center_values = center_vec, centered = centered)
+}
+
+.bigpca_compute_svd <- function(mat, pcs, return_loadings, method = c("irlba", "svd", "lapack", "eigen", "princomp"), use_bigalgebra = TRUE, logger = .bigpca_logger(FALSE)) {
+  method <- match.arg(method)
+  nU <- if (return_loadings) pcs else 0
+  if (identical(method, "princomp")) {
+    pr <- stats::princomp(t(mat))
+    keep <- min(pcs, ncol(pr$scores))
+    scores <- pr$scores[, seq_len(keep), drop = FALSE]
+    loadings <- if (return_loadings) unclass(pr$loadings)[, seq_len(keep), drop = FALSE] else NULL
+    eigenvalues <- pr$sdev^2
+    return(list(scores = scores, loadings = loadings, eigenvalues = eigenvalues, method = "princomp"))
+  }
+  if (identical(method, "eigen")) {
+    xtx <- crossprod(mat)
+    eig <- eigen(xtx / nrow(mat), symmetric = TRUE)
+    keep <- min(pcs, ncol(eig$vectors))
+    scores <- eig$vectors[, seq_len(keep), drop = FALSE]
+    eigenvalues <- eig$values
+    return(list(scores = scores, loadings = NULL, eigenvalues = eigenvalues, method = "eigen"))
+  }
+  if (identical(method, "lapack")) {
+    svd_res <- La.svd(mat, nu = nU, nv = pcs)
+    keep <- min(pcs, ncol(svd_res$vt))
+    scores <- t(svd_res$vt)[, seq_len(keep), drop = FALSE]
+    loadings <- if (return_loadings && nU > 0) svd_res$u[, seq_len(min(pcs, ncol(svd_res$u))), drop = FALSE] else NULL
+    eigenvalues <- svd_res$d^2
+    return(list(scores = scores, loadings = loadings, eigenvalues = eigenvalues, method = "lapack"))
+  }
+  use_irlba <- identical(method, "irlba") && requireNamespace("irlba", quietly = TRUE)
+  if (identical(method, "irlba") && !use_irlba) {
+    logger("WARN", "irlba package not available; falling back to base::svd.")
+  }
+  if (use_irlba) {
+    irlba_args <- list(A = mat, nv = pcs, nu = nU)
+    irlba_formals <- names(formals(irlba::irlba))
+    if (use_bigalgebra && "matmul" %in% irlba_formals) {
+      irlba_args$matmul <- matmul
+    } else if (use_bigalgebra && "mult" %in% irlba_formals) {
+      irlba_args$mult <- matmul
+    }
+    res <- do.call(irlba::irlba, irlba_args)
+    keep <- min(pcs, ncol(res$v))
+    scores <- res$v[, seq_len(keep), drop = FALSE]
+    loadings <- if (return_loadings && !is.null(res$u)) res$u[, seq_len(min(pcs, ncol(res$u))), drop = FALSE] else NULL
+    eigenvalues <- res$d^2
+    return(list(scores = scores, loadings = loadings, eigenvalues = eigenvalues, method = "irlba"))
+  }
+  svd_res <- svd(mat, nu = nU, nv = pcs)
+  keep <- min(pcs, ncol(svd_res$v))
+  scores <- svd_res$v[, seq_len(keep), drop = FALSE]
+  loadings <- if (return_loadings && nU > 0) svd_res$u[, seq_len(min(pcs, ncol(svd_res$u))), drop = FALSE] else NULL
+  eigenvalues <- svd_res$d^2
+  list(scores = scores, loadings = loadings, eigenvalues = eigenvalues, method = "svd")
+}
+
+.bigpca_construct_result <- function(scores, eigenvalues, loadings, center = NULL, metadata = list()) {
+  res <- list(
+    scores = scores,
+    eigenvalues = eigenvalues,
+    loadings = loadings,
+    center = center,
+    metadata = metadata
+  )
+  class(res) <- "bigpca_result"
+  res
+}
+
+.bigpca_result_alias <- function(name) {
+  if (!is.character(name) || length(name) != 1L) {
+    return(NULL)
+  }
+  switch(
+    tolower(name),
+    pcs = "scores",
+    scores = "scores",
+    loadings = "loadings",
+    evalues = "eigenvalues",
+    eigenvalues = "eigenvalues",
+    eigenv = "eigenvalues",
+    eigenvals = "eigenvalues",
+    eigen = "eigenvalues",
+    NULL
+  )
+}
+
+#' @export
+`$.bigpca_result` <- function(x, name) {
+  alias <- .bigpca_result_alias(name)
+  if (!is.null(alias) && alias %in% names(x)) {
+    return(x[[alias]])
+  }
+  underlying <- unclass(x)
+  underlying[[name]]
+}
+
+#' @export
+`[[.bigpca_result` <- function(x, i, ...) {
+  if (is.character(i)) {
+    alias <- .bigpca_result_alias(i)
+    if (!is.null(alias) && alias %in% names(x)) {
+      return(x[[alias]])
+    }
+  }
+  NextMethod()
+}
+
+#' @export
+print.bigpca_result <- function(x, ...) {
+  scores <- x$scores
+  n_obs <- if (!is.null(dim(scores))) nrow(scores) else length(scores)
+  n_comp <- if (!is.null(dim(scores))) ncol(scores) else 0L
+  cat("<bigpca_result>\n")
+  cat(sprintf(" - observations: %d\n", n_obs))
+  cat(sprintf(" - components: %d\n", n_comp))
+  if (!is.null(x$loadings)) {
+    cat(sprintf(" - features: %d\n", nrow(x$loadings)))
+  }
+  if (!is.null(x$metadata$method)) {
+    cat(sprintf(" - method: %s\n", x$metadata$method))
+  }
+  invisible(x)
 }
 
 # may want to use updated irlba2() function in order to allow bigger Matrices to be pca-ed #
@@ -1639,6 +1956,7 @@ select.col.row.custom <- function(bigMat,row,col,verbose=T)
 #'  most associated variables with phenotype
 #' @param pref character, a prefix for big.matrix backing files generated by this selection
 #' @param verbose logical, whether to display more information about processing
+#' @param delete.existing logical, whether to overwrite existing file-backed matrices generated with the same prefix
 #' @param ret.obj logical, whether to return the result as a big.matrix object (TRUE), or as a reference
 #'  to the binary file containing the big.matrix.descriptor object [either can be read with get.big.matrix() or
 #'  prv.big.matrix()]
@@ -1672,43 +1990,89 @@ select.col.row.custom <- function(bigMat,row,col,verbose=T)
 #' rm(lmat) 
 #' unlink(c("thin.bck","thin.dsc","thin.RData",paste0("th",2:5)))
 #' setwd(orig.dir)
-thin <- function(bigMat,keep=0.05,how=c("uniform","correlation","pca","association"),
-                 dir="",rows=TRUE,random=TRUE,hi.cor=TRUE,least=TRUE,
-                 pref="thin",verbose=FALSE,ret.obj=TRUE,...) {
-    how <- toupper(substr(how[1],1,2)); meth <- "none"
-    if(is.character(dir)) { if(dir=="") { dir <- getwd() } } else { dir <- getwd() }
-    if(how=="UN") {
-      meth <- "uniform"
-      rc <- uniform.select(bigMat,keep=keep,dir=dir,rows=rows,random=random,...)
-      if(rows) { subrc <- rc[[1]] } else { subrc <- rc[[2]] }
-    }
-    if(how=="CO") {
-      meth <- "correlation"
-      #hi.cor is the extra parameter for this
-      subrc <- subcor.select(bigMat,keep=keep,dir=dir,rows=rows,random=random,hi.cor=hi.cor,...)
-    }
-    if(how=="PC") {
-      meth <- "pca"
-      subrc <- subpc.select(bigMat,keep=keep,dir=dir,rows=rows,random=random,...)
-    }
-    if(how=="AS") {
-      meth <- "association"
-      rows <- T
-      #least is the extra parameter for this
-      test.args <- list(...)
-      if(!"phenotype" %in% names(test.args)) { stop("must include argument 'phenotype' when how='association'") }
-      subrc <- select.least.assoc(bigMat,keep=keep,dir=dir,verbose=verbose,least=least,...)
-    }
-    #prv(subrc)
-    if(meth=="none") { stop("invalid subsetting method (",how,") specified") }
-    if(rows) { sr <- subrc; sc <- 1:ncol(bigMat) } else { sr <- 1:nrow(bigMat); sc <- subrc }
-    bigSubMat <- big.select(bigMat, select.rows=sr, select.cols=sc, dir=dir, 
-                           deepC=T, pref=pref, verbose=verbose , delete.existing=T)
-    if(ret.obj) {
-      return(get.big.matrix(bigSubMat))
-    } else {
-      return(bigSubMat)
-    }
+thin <- function(
+  bigMat,
+  keep = 0.05,
+  how = c("uniform", "correlation", "pca", "association"),
+  dir = "",
+  rows = TRUE,
+  random = TRUE,
+  hi.cor = TRUE,
+  least = TRUE,
+  pref = "thin",
+  verbose = FALSE,
+  ret.obj = TRUE,
+  delete.existing = TRUE,
+  ...
+) {
+  logger <- .bigpca_logger(verbose)
+  dirs <- .bigpca_resolve_dirs(dir, c("big", "pc"))
+  rows <- .bigpca_validate_logical_scalar(rows, "rows")
+  random <- .bigpca_validate_logical_scalar(random, "random")
+  hi.cor <- .bigpca_validate_logical_scalar(hi.cor, "hi.cor")
+  least <- .bigpca_validate_logical_scalar(least, "least")
+  ret.obj <- .bigpca_validate_logical_scalar(ret.obj, "ret.obj")
+  delete.existing <- .bigpca_validate_logical_scalar(delete.existing, "delete.existing")
+  how_choice <- match.arg(tolower(how), c("uniform", "correlation", "pca", "association"))
+  method_key <- toupper(substr(how_choice, 1, 2))
+  input <- .bigpca_resolve_input_matrix(bigMat, dirs, logger)
+  if (identical(method_key, "AS") && !rows) {
+    logger("WARN", "Association thinning only operates on rows; switching to rows = TRUE.")
+    rows <- TRUE
+  }
+  total_dim <- if (rows) input$nrow else input$ncol
+  if (total_dim < 1L) {
+    stop("Input matrix must have positive dimensions for thinning.", call. = FALSE)
+  }
+  keep_value <- .bigpca_validate_numeric_scalar(keep, "keep", lower = 0)
+  subset_size <- if (keep_value > 1) min(total_dim, round(keep_value)) else max(1L, round(total_dim * keep_value))
+  if (subset_size >= total_dim) {
+    logger("INFO", "Requested keep value retains all %s; proceeding without reduction.", if (rows) "rows" else "columns")
+  } else {
+    logger("INFO", "Reducing %s from %d to %d entries using %s thinning.", if (rows) "rows" else "columns", total_dim, subset_size, method_key)
+  }
+  work_mat <- if (identical(input$type, "big.matrix")) input$bigmatrix else input$matrix
+  selection <- switch(
+    method_key,
+    UN = {
+      rc <- uniform.select(work_mat, keep = keep, dir = dirs$big, rows = rows, random = random, ...)
+      if (rows) rc$order.r else rc$order.c
+    },
+    CO = subcor.select(work_mat, keep = keep, dir = dirs$big, rows = rows, random = random, hi.cor = hi.cor, ...),
+    PC = subpc.select(work_mat, keep = keep, dir = dirs$big, rows = rows, random = random, ...),
+    AS = {
+      dots <- list(...)
+      if (!"phenotype" %in% names(dots)) {
+        stop("must include argument 'phenotype' when how = 'association'", call. = FALSE)
+      }
+      select.least.assoc(work_mat, keep = keep, dir = dirs$big, verbose = verbose, least = least, ...)
+    },
+    stop(sprintf("invalid subsetting method (%s) specified", how_choice), call. = FALSE)
+  )
+  if (is.null(selection) || length(selection) == 0L) {
+    stop("Thinning selection produced no indices; check input parameters.", call. = FALSE)
+  }
+  if (rows) {
+    selected_rows <- selection
+    selected_cols <- seq_len(input$ncol)
+  } else {
+    selected_rows <- seq_len(input$nrow)
+    selected_cols <- selection
+  }
+  big_result <- big.select(
+    bigMat,
+    select.rows = selected_rows,
+    select.cols = selected_cols,
+    dir = dirs$big,
+    deepC = TRUE,
+    pref = pref,
+    verbose = verbose,
+    delete.existing = delete.existing
+  )
+  if (ret.obj) {
+    return(get.big.matrix(big_result, dir = dirs))
+  }
+  big_result
 }
 
 
@@ -2371,15 +2735,9 @@ cut_fac <- function(N,n.grps,start.zero=FALSE,factor=TRUE) {
 #'  matrix. Default is to calculate only the first 50; in practice even fewer than this are generally
 #'  used directly. Apart from reducing processing time, this can also reduce storage/RAM burden for 
 #'  the resulting matrix. Set to NA, or a number >= min(dim(bigMat)) in order to keep all PCs.
-#' @param thin decimal, percentage of the original number of rows you want to thin the matrix to.
-#'  see function thin() for details of how this can be done, pass arguments to thin() using ...
-#'  Even though this PCA function uses mainly 'big.matrix' native methods, there is a step where the
-#'  matrix must be stored fully in memory, so this limits the size of what matrix can be processed,
-#'  depending on RAM limits. If you want to conduct PCA/SVD on a matrix larger than RAM you can thin
-#'  the matrix to a percentage of the original size. Usually such a large matrix will contain correlated
-#'  measures and so the exclusion of some data-rows (variables) will have only a small impact on the
-#'  resulting principle components. In some applications tested using this function, using only 5% 
-#'  of 200,000 variables a PCA gave extremely similar results to using the full dataset.
+#' @param thin logical, whether to apply \code{thin()} before running PCA. When TRUE, any additional
+#'  arguments supplied via \code{...} are forwarded to \code{thin()} (for example \code{keep}, \code{how}, or \code{pref}).
+#'  Thinning can be used to reduce very wide matrices to a manageable subset prior to SVD.
 #' @param SVD logical, whether to use a Singular Value Decomposition method or a PCA method. The 
 #'  eigenvalues and eigenvectors of each alternative will be highly correlated so for most applications,
 #'  such as PC-correction, this shouldn't make much difference to the result. However, using SVD=TRUE
@@ -2401,13 +2759,11 @@ cut_fac <- function(N,n.grps,start.zero=FALSE,factor=TRUE) {
 #'  implementation it can accelerate work on very large matrices. Installation
 #'  tips for optional acceleration are documented in the README. Set this to
 #'  FALSE to skip bigalgebra checks when you know it is unavailable.
-#' @param ... if thin is TRUE, then these should be any additional arguments for thin(), e.g, 'pref', 'keep', 'how', etc.i
-#' @param delete.existing logical, whether to automatically delete filebacked matrices (if they exist) 
-#' before rewriting. This is because of an update since 20th October 2015 where bigmemory won't allow
-#' overwrite of an existing filebacked matrix. If you wish to set this always TRUE or FALSE, use
-#'  options(deleteFileBacked)
-#' @return A list of principle components/singular vectors (may be incomplete depending on options selected), and of
-#'  the eigenvalues/singular values.
+#' @param ... additional arguments forwarded to \code{thin()} when \code{thin = TRUE}.
+#' @param delete.existing logical, whether to overwrite intermediate file-backed matrices created during thinning.
+#' @return A \code{bigpca_result} S3 object containing principal component scores, optional loadings, eigenvalues,
+#'  and metadata about the run. Legacy element names such as \code{$PCs} and \code{$Evalues} remain available for
+#'  backwards compatibility via list-style access.
 #' @export
 #' @seealso \code{\link{get.big.matrix}}, \code{\link{PC.correct}}
 #' @author Nicholas Cooper
@@ -2484,155 +2840,136 @@ cut_fac <- function(N,n.grps,start.zero=FALSE,factor=TRUE) {
 #' rm(bmat2) 
 #' unlink(c("testMyBig2.bck","testMyBig2.dsc"))
 #' setwd(orig.dir)
-big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FALSE,center=TRUE,
-                    save.pcs=FALSE,use.bigalgebra=TRUE,pcs.fn="PCsEVsFromPCA.RData",
-                    return.loadings=FALSE,verbose=FALSE,delete.existing=getOption("deleteFileBacked"),...) 
-{
-  # run principle components analysis on the SNP subset of the LRR snp x sample matrix
-  # various methods to choose from with pro/cons of speed/memory, etc.
-  #  must use SNP-subset to avoid LD, destroying main effects, +avoid huge memory requirements
-  #dir <- validate.dir.for(dir,c("big","pc"))
-  if(exists("validate.dir.for",mode="function")) {
-    ## plumbCNV specific code ##
-    dir <- do.call("validate.dir.for",list(dir=dir,elements=c("big","pc"),warn=F))  
-  } else {
-    # otherwise
-    dir <- list(big=dir,pc=dir)
+big.PCA <- function(
+  bigMat,
+  dir = getwd(),
+  pcs.to.keep = 50,
+  thin = FALSE,
+  SVD = TRUE,
+  LAP = FALSE,
+  center = TRUE,
+  save.pcs = FALSE,
+  use.bigalgebra = TRUE,
+  pcs.fn = "PCsEVsFromPCA.RData",
+  return.loadings = FALSE,
+  verbose = FALSE,
+  delete.existing = TRUE,
+  ...
+) {
+  logger <- .bigpca_logger(verbose)
+  dirs <- .bigpca_resolve_dirs(dir, c("big", "pc"))
+  SVD <- .bigpca_validate_logical_scalar(SVD, "SVD")
+  LAP <- .bigpca_validate_logical_scalar(LAP, "LAP")
+  use.bigalgebra <- .bigpca_validate_logical_scalar(use.bigalgebra, "use.bigalgebra")
+  save.pcs <- .bigpca_validate_logical_scalar(save.pcs, "save.pcs")
+  return.loadings <- .bigpca_validate_logical_scalar(return.loadings, "return.loadings")
+  delete.existing <- .bigpca_validate_logical_scalar(delete.existing, "delete.existing")
+  thin_enabled <- .bigpca_validate_logical_scalar(thin, "thin")
+  extra_args <- list(...)
+  if (!is.logical(center) && !is.numeric(center)) {
+    stop("center must be logical or a numeric vector matching the number of rows.", call. = FALSE)
   }
-  #must.use.package(c("irlba"),T)
-  if(thin) {
-    if(verbose) {  prv.big.matrix(bigMat) }
-    bigMat <- thin(bigMat,dir=dir,...)
-    if(verbose) {  prv.big.matrix(bigMat) }
-  } 
-  pcaMat <- get.big.matrix(bigMat,dir)
-  #print(dim(pcaMat))
-  if(verbose & !thin) { prv.big.matrix(pcaMat,name="pcaMat") }
-  est.mem <- estimate.memory(pcaMat)
-  if(est.mem>1) {
-    cat(" estimated memory required for",nrow(pcaMat),"x",ncol(pcaMat),"matrix:",round(est.mem,2),
-      "GB. If this exceeds available,\n  then expect PCA to take a long time or fail!\n")
+  pcs_keep <- NA_integer_
+  if (!is.na(pcs.to.keep)) {
+    pcs_keep <- .bigpca_validate_numeric_scalar(pcs.to.keep, "pcs.to.keep", lower = 1, integer = TRUE)
   }
-  #print(packages.loaded())
-  subMat <- pcaMat[1:nrow(pcaMat),1:ncol(pcaMat)] # must convert bigmatrix to plain matrix here, no pca yet takes a bigmatrix
-  rm(pcaMat)
-  # center using row means
-  if(length(center)>1) {
-    if(length(center)==nrow(subMat)) {
-      CM <- center
-      center <- TRUE
-      rm.sub <- function(X) { 
-        mmm <-  matrix(rep(CM,times=ncol(subMat)),ncol=ncol(subMat),byrow=F)
-        prv(mmm)
-        return(mmm)
-      }
+  thin_arg_names <- character()
+  if (thin_enabled) {
+    thin_args <- extra_args
+    thin_args$bigMat <- bigMat
+    thin_args$dir <- dirs
+    thin_args$verbose <- verbose
+    thin_args$delete.existing <- delete.existing
+    thin_args$ret.obj <- TRUE
+    thin_args$thin <- NULL
+    thin_arg_names <- setdiff(names(thin_args), c("bigMat", "dir", "verbose", "delete.existing", "ret.obj"))
+    bigMat <- do.call(thin, thin_args)
+    if (inherits(bigMat, "big.matrix") || is.matrix(bigMat)) {
+      dims <- dim(bigMat)
+      logger("INFO", "Thinned matrix to %d rows x %d columns.", dims[1], dims[2])
     } else {
-      rm.sub <- rowMeans ; warning("center vector didn't match number of rows of 'bigMat', data left uncentered")
-      center <- FALSE
+      logger("INFO", "Thinning complete.")
     }
-  } else { 
-      rm.sub <- rowMeans # a bit hacky?
+    extra_args <- list()
+  } else if (length(extra_args) > 0L) {
+    logger(
+      "WARN",
+      "Ignoring %d additional argument%s because thin = FALSE.",
+      length(extra_args),
+      if (length(extra_args) == 1L) "" else "s"
+    )
   }
-  if(center) {
-    if(verbose) { cat(" centering data by row means...") }
-    subMat <- subMat - rm.sub(subMat)  #matrix(rep(rowMeans(subMat),times=ncol(subMat)),ncol=ncol(subMat))
-    subMat[is.na(subMat)] <- 0 # replace missing with the mean
-    cat(" means for first 10 rows:\n")
-    print(round(head(rowMeans(subMat),10))) # show that centering has worked
-  } else {
-    subMat <- apply(subMat,1,row.rep)
+  input <- .bigpca_resolve_input_matrix(bigMat, dirs, logger)
+  materialized <- .bigpca_materialize_matrix(input)
+  mat <- materialized$matrix
+  dims <- dim(mat)
+  if (any(dims < 2L, na.rm = TRUE)) {
+    stop("Input matrix must have at least two rows and two columns for PCA.", call. = FALSE)
   }
-  if(verbose) { cat(" replaced missing data with mean (PCA cannot handle missing data)\n") }
-  #subMat <- t(subMat) # transpose
-  dimz <- dim(subMat)
-  if(!is.numeric(pcs.to.keep) | is.integer(pcs.to.keep)) { pcs.to.keep <- NA }
-  if(is.na(pcs.to.keep)) { pcs.to.keep <- min(dimz) }
-  if(pcs.to.keep > min(dimz)) { 
-    # ensure not trying to extract too many pcs
-    warning(paste("selected too many PCs to keep [",pcs.to.keep,"], changing to ",min(dimz),"\n",sep="")) 
-    pcs.to.keep <- min(dimz)
-  } 
-  if(!SVD & (dimz[2]>dimz[1])) {
-    if(verbose) { cat(" PCA using 'princomp' (only for datasets with more samples than markers)\n") }
-    print(system.time(result <- princomp(t(subMat))))
-    PCs <- result$scores[,1:pcs.to.keep]
-    loadings <- result$loadings[,1:pcs.to.keep]
-    Evalues <- result$sdev^2 # sds are sqrt of eigenvalues
+  max_components <- min(dims)
+  if (is.na(pcs_keep)) {
+    pcs_keep <- max_components
+  } else if (pcs_keep > max_components) {
+    logger("WARN", "pcs.to.keep (%d) exceeds available components (%d); truncating.", pcs_keep, max_components)
+    pcs_keep <- max_components
+  }
+  preprocess <- .bigpca_preprocess_matrix(mat, center)
+  method <- if (!SVD) {
+    if (dims[2] > dims[1]) "princomp" else "eigen"
+  } else if (LAP) {
+    "lapack"
   } else {
-    if(!SVD) {
-      if(verbose) {
-        cat(" PCA by crossproduct and solving eigenvectors\n")
-        cat(" obtaining crossproduct of the matrix and transpose XtX...")
-      }
-      uu <-(system.time(xtx <- crossprod(subMat)))
-      if(verbose) { 
-        cat("took",round(uu[3]/60,1),"minutes\n")
-        cat(" obtaining eigen vectors of the crossproduct XtX...")
-      }
-      uu <-(system.time(result <- eigen((xtx/nrow(subMat)),symmetric=T)))
-      if(verbose) {  cat("took",round(uu[3]/60,1),"minutes\n") }
-      PCs <- result$vectors[,1:pcs.to.keep]
-      Evalues <- result$values
-      loadings <- NULL
-    } else {
-      irlba_available <- requireNamespace("irlba", quietly = TRUE)
-      bigalgebra_available <- use.bigalgebra && requireNamespace("bigalgebra", quietly = TRUE)
-      if(use.bigalgebra && !biganalgebra_available && verbose) {
-        message("bigalgebra not detected; using base matrix multiplications. See README.md for optional acceleration tips.")
-      }
-      do.fast <- (!LAP && use.bigalgebra && irlba_available)
-      if(verbose) {
-        cat(" PCA by singular value decomposition...") # La.svd gives result with reversed dims. (faster?)
-      }
-      if(return.loadings)  { nU <- pcs.to.keep } else { nU <- 0 }
-      if(!LAP) {
-        if(do.fast) {
-          irlba_args <- list(A = subMat, nv = pcs.to.keep, nu = nU)
-          irlba_formals <- names(formals(irlba::irlba))
-          if("matmul" %in% irlba_formals) {
-            irlba_args$matmul <- matmul
-          } else if("mult" %in% irlba_formals) {
-            irlba_args$mult <- matmul
-          }
-          uu <- (system.time(result <- do.call(irlba::irlba, irlba_args)))
-        } else {
-          if(verbose && use.bigalgebra && !irlba_available) {
-            warning("irlba is not installed; falling back to base::svd. See README.md for dependency setup.\n")
-          }
-          uu <- (system.time(result <- svd(subMat,nv=pcs.to.keep,nu=nU)))
-        }
-        if(verbose) { cat("took",round(uu[3]/60,1),"minutes\n") }
-        PCs <- result$v[,1:pcs.to.keep]
-        #print("thus ones"); prv(result,return.loadings,nU)
-        if(return.loadings) { loadings <- result$u[,1:pcs.to.keep] } else { loadings <- NULL }
-        Evalues <- result$d^2 # singular values are the sqrt of eigenvalues 
-      } else {
-        if(verbose) { cat("\n [using LAPACK alternative with La.svd]") }
-        uu <- (system.time(result <- La.svd(subMat,nv=pcs.to.keep,nu=nU)))
-        if(verbose) { cat("took",round(uu[3]/60,1),"minutes\n") }
-        PCs <- t(result$vt)[,1:pcs.to.keep]  ##?
-       # print("thOs ones")
-        if(return.loadings) { loadings <- result$u[,1:pcs.to.keep] } else { loadings <- NULL }
-        Evalues <- result$d^2 # singular values are the sqrt of eigenvalues
-      }
+    "irlba"
+  }
+  svd_result <- .bigpca_compute_svd(
+    preprocess$matrix,
+    pcs_keep,
+    return.loadings,
+    method = method,
+    use_bigalgebra = use.bigalgebra,
+    logger = logger
+  )
+  scores <- svd_result$scores
+  components_available <- ncol(scores)
+  comp_labels <- paste0("PC", seq_len(components_available))
+  if (!is.null(materialized$colnames)) {
+    rownames(scores) <- materialized$colnames
+  }
+  colnames(scores) <- comp_labels
+  loadings <- svd_result$loadings
+  if (!is.null(loadings)) {
+    if (!is.null(materialized$rownames)) {
+      rownames(loadings) <- materialized$rownames
     }
+    colnames(loadings) <- comp_labels
   }
-  rownames(PCs) <- colnames(subMat)
-  colnames(PCs) <- paste("PC",1:pcs.to.keep,sep="")
-  if(save.pcs) {
-    ofn <- cat.path(dir$pc,pcs.fn)
-    cat(paste("~wrote PC data to file:",ofn,"\n"))
-    save(PCs,Evalues,loadings,file=ofn) }
-  if(return.loadings & exists("loadings")) {
-    colnames(loadings) <- paste("PC",1:pcs.to.keep,sep="")
-    rownames(loadings) <- rownames(subMat)
-    out.dat <- list(PCs,Evalues,loadings)
-    names(out.dat) <- c("PCs","Evalues","loadings")
-  } else {
-    out.dat <- list(PCs,Evalues)
-    names(out.dat) <- c("PCs","Evalues")
+  eigenvalues <- svd_result$eigenvalues
+  eigenvalues <- eigenvalues[seq_len(components_available)]
+  metadata <- list(
+    method = svd_result$method,
+    call = match.call(),
+    centered = preprocess$centered,
+    source_dim = c(rows = dims[1], cols = dims[2]),
+    thin = thin_enabled,
+    thin_args = thin_arg_names,
+    components_requested = pcs_keep
+  )
+  result <- .bigpca_construct_result(
+    scores = scores,
+    eigenvalues = eigenvalues,
+    loadings = loadings,
+    center = preprocess$center,
+    metadata = metadata
+  )
+  if (save.pcs) {
+    output_path <- cat.path(dirs$pc, pcs.fn)
+    logger("INFO", "Saving PCA outputs to %s", output_path)
+    PCs <- result$scores
+    Evalues <- result$eigenvalues
+    loadings_obj <- result$loadings
+    save(result, PCs, Evalues, loadings_obj, file = output_path)
   }
-  return(out.dat)
+  result
 }
 
 
@@ -2649,9 +2986,8 @@ big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FA
 #' is returned as a big.matrix object, so that objects larger than available RAM can be processed, and
 #' multiple processors can be utilised for greater speed for large datasets.
 #' 
-#' @param pca.result result returned by 'big.PCA()', or a list with 2 elements containing
-#'  the principle components and the eigenvalues respectively (or SVD equivalents). Alternatively,
-#'  can be the name of an R binary file containing such an object.
+#' @param pca.result result returned by 'big.PCA()' (a \code{bigpca_result}), a list containing
+#'  principal component scores, or the path to an R binary file containing such an object.
 #' @param bigMat a big.matrix with exactly corresponding samples (columns) to those submitted to PCA prior to correction
 #' @param dir directory containing the big.matrix backing file
 #' @param num.pcs number of principle components (or SVD components) to correct for
@@ -2671,10 +3007,8 @@ big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FA
 #'  skew may change.
 #' @param tracker logical, whether to display a progress bar
 #' @param verbose logical, whether to display preview of pre- and post- corrected matrix
-#' @param delete.existing logical, whether to automatically delete filebacked matrices (if they exist) 
-#' before rewriting. This is because of an update since 20th October 2015 where bigmemory won't allow
-#' overwrite of an existing filebacked matrix. If you wish to set this always TRUE or FALSE, use
-#'  options(deleteFileBacked)
+#' @param delete.existing logical, whether to remove existing file-backed artefacts with the same prefix before
+#'  writing the corrected output. Set to FALSE to retain previous results.
 #' @return A big.matrix of the same dimensions as original, corrected for n PCs and an optional covariate (sex)
 #' @export
 #' @seealso \code{\link{big.PCA}}
@@ -2694,165 +3028,195 @@ big.PCA <- function(bigMat,dir=getwd(),pcs.to.keep=50,thin=FALSE,SVD=TRUE,LAP=FA
 #' rm(bmat2) 
 #' unlink(c("testMyBig.bck","testMyBig.dsc"))
 #' setwd(orig.dir) # reset working dir to original
-PC.correct <- function(pca.result,bigMat,dir=getwd(),num.pcs=9,n.cores=1,pref="corrected",
-                            big.cor.fn=NULL,write=FALSE,sample.info=NULL,correct.sex=FALSE,
-                            add.int=FALSE,preserve.median=FALSE, tracker=TRUE,verbose=TRUE,
-                            delete.existing=getOption("deleteFileBacked"))
-{
-  ## using results of a PCA analysis, run correction for 'num.pcs' PCs on a dataset
-  # uncorrected matrix
-  #dir <- validate.dir.for(dir,c("big","pc"))
-  if(exists("validate.dir.for",mode="function")) {
-    ## plumbCNV specific code ##
-    dir <- do.call("validate.dir.for",list(dir=dir,elements=c("big","pc"),warn=F))  
-  } else {
-    # otherwise
-    dir <- list(big=dir,pc=dir)
+PC.correct <- function(
+  pca.result,
+  bigMat,
+  dir = getwd(),
+  num.pcs = 9,
+  n.cores = 1,
+  pref = "corrected",
+  big.cor.fn = NULL,
+  write = FALSE,
+  sample.info = NULL,
+  correct.sex = FALSE,
+  add.int = FALSE,
+  preserve.median = FALSE,
+  tracker = TRUE,
+  verbose = TRUE,
+  delete.existing = TRUE
+) {
+  logger <- .bigpca_logger(verbose)
+  dirs <- .bigpca_resolve_dirs(dir, c("big", "pc"))
+  num.pcs <- .bigpca_validate_numeric_scalar(num.pcs, "num.pcs", lower = 1, integer = TRUE)
+  n.cores <- .bigpca_validate_numeric_scalar(n.cores, "n.cores", lower = 1, integer = TRUE)
+  write <- .bigpca_validate_logical_scalar(write, "write")
+  correct.sex <- .bigpca_validate_logical_scalar(correct.sex, "correct.sex")
+  add.int <- .bigpca_validate_logical_scalar(add.int, "add.int")
+  preserve.median <- .bigpca_validate_logical_scalar(preserve.median, "preserve.median")
+  tracker <- .bigpca_validate_logical_scalar(tracker, "tracker")
+  delete.existing <- .bigpca_validate_logical_scalar(delete.existing, "delete.existing")
+
+  origMat <- get.big.matrix(bigMat, dirs$big)
+  nR <- nrow(origMat)
+  nC <- ncol(origMat)
+  if (nR < 2L || nC < 2L) {
+    stop("'bigMat' must have at least two rows and two columns for PC correction.", call. = FALSE)
   }
-  origMat <- get.big.matrix(bigMat,dir)
-  if(verbose) {
-    cat("\nRunning Principle Components correction (PC-correction), using LRR-dataset:\n")
-    prv.big.matrix(origMat,name="origMat")
+  rN <- rownames(origMat)
+  cN <- colnames(origMat)
+  scores <- .bigpca_extract_scores(pca.result, dirs, logger)
+  scores <- as.matrix(scores)
+  if (!is.null(rownames(scores)) && !is.null(cN)) {
+    idx <- match(cN, rownames(scores))
+    if (anyNA(idx)) {
+      stop("PCA scores did not contain all samples present in 'bigMat'.", call. = FALSE)
+    }
+    scores <- scores[idx, , drop = FALSE]
+  } else if (nrow(scores) != nC) {
+    stop("Number of PCA scores rows does not match the number of columns in 'bigMat'.", call. = FALSE)
   }
-  if(n.cores>1) { multi <- T } else { multi <- F }
-  # get filenames now to add to result later
-  rN <- rownames(origMat); cN <- colnames(origMat)
-  # run pca.correction using vectors (PCs) and values from PCA
-  if(!is.list(pca.result)) {
-    if(is.character(pca.result)) {
-      ofn <- cat.path(dir$pc,pca.result) 
-      if(file.exists(ofn))
-      {
-        pca.file <- get(load(ofn))
-        cat(" loaded PCA values and vectors\n")
-        nn <- which(toupper(names(pca.result))=="PCS")
-        if(length(nn)==0) { nn <- 1 }
-        PCs <- pca.result[[nn]]
-      } else {
-        stop("Error: file",ofn,"does not exist\n")
-      }
+  if (num.pcs > ncol(scores)) {
+    logger("WARN", "Requested %d PCs but only %d available; truncating.", num.pcs, ncol(scores))
+    num.pcs <- ncol(scores)
+  }
+  design <- scores[, seq_len(num.pcs), drop = FALSE]
+  design <- as.matrix(design)
+  if (!is.numeric(design)) {
+    storage.mode(design) <- "numeric"
+  }
+  if (correct.sex) {
+    if (is.null(sample.info) || !is.data.frame(sample.info)) {
+      stop("sample.info must be a data.frame when correct.sex = TRUE.", call. = FALSE)
+    }
+    if (is.null(rownames(sample.info))) {
+      stop("sample.info must have rownames matching the sample identifiers.", call. = FALSE)
+    }
+    coln <- which(tolower(colnames(sample.info)) %in% c("gender", "sex"))
+    if (!length(coln)) {
+      stop("sample.info must contain a 'sex' or 'gender' column when correct.sex = TRUE.", call. = FALSE)
+    }
+    idx <- match(cN, rownames(sample.info))
+    if (anyNA(idx)) {
+      stop("sample.info is missing entries for some samples in 'bigMat'.", call. = FALSE)
+    }
+    sex.vec <- sample.info[idx, coln[1]]
+    if (!is.numeric(sex.vec)) {
+      sex.vec <- as.numeric(factor(sex.vec))
+      logger("INFO", "Converted categorical sex labels to numeric codes for regression.")
+    }
+    sex.vec[is.na(sex.vec)] <- mean(sex.vec, na.rm = TRUE)
+    design <- cbind(sex = sex.vec, design)
+  }
+  design <- cbind(intercept = 1, design)
+  logger(
+    "INFO",
+    "Performing PC correction on %d variables across %d samples using %d component%s%s.",
+    nR,
+    nC,
+    num.pcs,
+    if (num.pcs == 1L) "" else "s",
+    if (correct.sex) " with sex covariate" else ""
+  )
+
+  backingfile <- sprintf("%s.bck", pref)
+  descriptorfile <- sprintf("%s.dsc", pref)
+  if (delete.existing) {
+    unlink(cat.path(dirs$big, backingfile))
+    unlink(cat.path(dirs$big, descriptorfile))
+  }
+  options(bigmemory.allow.dimnames = TRUE)
+  pcCorMat <- bigmemory::filebacked.big.matrix(
+    nrow = nR,
+    ncol = nC,
+    backingfile = backingfile,
+    descriptorfile = descriptorfile,
+    backingpath = dirs$big,
+    dimnames = list(rN, cN)
+  )
+  if (!bigmemory::is.big.matrix(pcCorMat)) {
+    stop("Failed to initialise file-backed matrix for corrected data.", call. = FALSE)
+  }
+
+  multi <- n.cores > 1L && .Platform$OS.type != "windows"
+  if (n.cores > 1L && !multi) {
+    logger("WARN", "Parallel correction is not available on this platform; using a single core.")
+  } else if (multi) {
+    logger("INFO", "Using %d cores for row-wise correction.", n.cores)
+  }
+
+  nsamples <- nC
+  snps.per.proc <- 400L
+  flush.freq <- 20L
+  if (nsamples > 10000L) snps.per.proc <- 300L
+  if (nsamples > 20000L) snps.per.proc <- 150L
+  if (nsamples > 40000L) snps.per.proc <- 50L
+  if (nsamples > 80000L) snps.per.proc <- 10L
+  if (n.cores > 5L) {
+    snps.per.proc <- snps.per.proc * 2L
+    flush.freq <- flush.freq * 2L
+  }
+  if (n.cores > 15L) {
+    snps.per.proc <- snps.per.proc * 2L
+  }
+  if (snps.per.proc < n.cores) {
+    n.cores <- max(1L, snps.per.proc %/% 5L)
+  }
+  stepz <- round(seq(from = 1, to = nR + 1, by = snps.per.proc))
+  if (tail(stepz, 1) != nR + 1L) {
+    stepz <- c(stepz, nR + 1L)
+  }
+  sc.lst <- head(tail(stepz, 2), 1)
+  lst <- tail(stepz, 1)
+  if (lst - sc.lst <= 4L) {
+    ll <- length(stepz)
+    if (ll > 2L) {
+      stepz <- stepz[-(ll - 1L)]
     } else {
-      if(ncol(origMat) %in% dim(pca.result))
-      {
-        #given dimensions = number of samples, assume PCs entered as matrix
-        PCs <- pca.result
-      } else {
-        stop("Error: expecting file name or PC matrix: pca.result\n")
-      }
-    } 
-  } else {
-    nn <- which(toupper(names(pca.result))=="PCS")
-    if(length(nn)==0) { nn <- 1 }
-    PCs <- pca.result[[nn]]
-  }
-  # create new matrix same size, ready for corrected values
-  nR <- nrow(origMat); nC <- ncol(origMat)
-  if(nR<2) { stop("too few rows to run PC correction") }
-  if(nC<2) { stop("too few columns to run PC correction") }
-  if(verbose) { cat(" creating new file backed big.matrix to store corrected data...") }
-  fnm <- paste(pref,"bck",sep=".")
-  if(delete.existing & file.exists(cat.path(dir$big,fnm))) { unlink(cat.path(dir$big,fnm))  }
-  pcCorMat <- filebacked.big.matrix(nR,nC, backingfile=paste(pref,"bck",sep="."),
-                                    backingpath=dir$big, descriptorfile=paste(pref,"dsc",sep="."))
-  cat("done\n")
-  if(!is.filebacked(pcCorMat) | !is.filebacked(origMat)) {
-    warning("at least one of the big.matrices is not filebacked, memory problems may be encountered")
-  }
-  # in result$vectors, PCs are the columns, only need first 10 or so
-  # rows are subjects / samples
-  col.sel <- 1:ncol(origMat)
-  nPCs <- PCs[,1:num.pcs]; sex.txt <- ""
-  if(correct.sex) { 
-    ## add a column to the PC matrix which will allow to covary for sex too
-    coln <- which(tolower(colnames(sample.info)) %in% c("gender","sex")) 
-    if(length(coln)>0) { 
-      indx <- match(colnames(origMat),rownames(sample.info))
-      if(all(!is.na(indx))) {
-        sex.vec <- sample.info[indx,coln[1]] 
-        sex.vec[is.na(sex.vec)] <- mean(sex.vec,na.rm=T) # replace missing sex with mean 
-        nPCs <- cbind(sex.vec,nPCs) ; sex.txt <- " (covarying for sex)"
-      } else { warning("could not correct for sex as sample.info was missing some IDs") }
+      logger("WARN", "Very small number of rows detected; chunking may be inefficient.")
     }
   }
-  nPCs <- cbind(rep(1,nrow(nPCs)),nPCs) # this adds intercept term for lm.fit() [remove if using lm() ]
-  cat(" correcting by principle components",sex.txt,", taking the regression-residual for each variable\n",sep="")
-  jj <- proc.time()
-  nsamples <- ncol(origMat)
-  num.snps <- nrow(origMat); sampz <- 1:nsamples
-  snps.per.proc <- 400;   flush.freq <- 20
-  if(nsamples>10000) { snps.per.proc <- 300 }; if(nsamples>20000) { snps.per.proc <- 150 }
-  if(nsamples>40000) { snps.per.proc <- 50 }; if(nsamples>80000) { snps.per.proc <- 10 }
-  ## assume if we have lots of cores, we'd also have lots of RAM too
-  if(n.cores>5) { snps.per.proc <- snps.per.proc*2; flush.freq <- flush.freq*2 } 
-  if(n.cores>15) { snps.per.proc <- snps.per.proc*2 }
-  #snps.per.proc <- max(snps.per.proc,n.cores) # at least 1 snp per core as a minimum
-  if(snps.per.proc<n.cores) { n.cores <- snps.per.proc %/% 5 } # if really low num, use less cores
-  stepz <- round(seq(from=1,to=num.snps+1,by=snps.per.proc))
-  if((tail(stepz,1)) != num.snps+1) { stepz <- c(stepz,num.snps+1) }
-  # if the last step is too small, merge with previous
-  sc.lst <- head(tail(stepz,2),1); lst <- tail(stepz,1)
-  if(lst-sc.lst <=4) { ll <- length(stepz); if(ll>2) { stepz <- stepz[-(ll-1)] } else { warning("number of Rows quite small, may cause issues") } }
-  split.to <- length(stepz)-1
-  big.extras <- T # flush memory every 'n' iterations.
-  # this simple way works (instead of big for-loop) but hogs memory and is no faster
-  # [NB: requires transpose of target corrected big matrix dimensions]
-  ### pcCorMat <- apply(origMat,1,PC.fn,nPCs=nPCs,col.sel=sampz)
-  for (dd in 1:split.to)
-  {
-    x1 <- stepz[dd]; x2 <- stepz[dd+1]-1 #subset row selection
-    # use of this 'sub.big.matrix' structure, stops the memory leak behaviour which spirals
-    # the memory relating to 'origMat' out of control. 
-    next.rows <- sub.big.matrix(origMat, firstRow=x1, lastRow=x2, backingpath=dir$big )
-    if(length(Dim(next.rows))!=2) { stop("expected a matrix, got a vector")}
-   # prv(next.rows,x1,x2,nPCs,multi,split.to,stepz)
-    # next.rows is now a pointer to a matrix subset, must use 'as.matrix' to coerce to a regular R object 
-    if(multi) {
-      #pcCorMat[x1:x2,] <- PC.fn.mat.multi(next.rows[1:nrow(next.rows),1:ncol(next.rows)],nPCs,mc.cores=n.cores,add.int=add.int)
-      pcCorMat[x1:x2,] <- PC.fn.mat.multi(bigmemory::as.matrix(next.rows),nPCs,mc.cores=n.cores,add.int=add.int, pm=preserve.median)
+  split.to <- length(stepz) - 1L
+  start_time <- proc.time()[3]
+  for (dd in seq_len(split.to)) {
+    x1 <- stepz[dd]
+    x2 <- stepz[dd + 1L] - 1L
+    next.rows <- sub.big.matrix(origMat, firstRow = x1, lastRow = x2, backingpath = dirs$big)
+    chunk <- bigmemory::as.matrix(next.rows)
+    if (multi) {
+      corrected <- PC.fn.mat.multi(chunk, design, mc.cores = n.cores, add.int = add.int, pm = preserve.median)
     } else {
-      #pcCorMat[x1:x2,] <- PC.fn.mat.apply(next.rows[1:nrow(next.rows),1:ncol(next.rows)],nPCs,add.int=add.int)
-      pcCorMat[x1:x2,] <- PC.fn.mat.apply(bigmemory::as.matrix(next.rows),nPCs,add.int=add.int, pm=preserve.median)
+      corrected <- PC.fn.mat.apply(chunk, design, add.int = add.int, pm = preserve.median)
     }
-    if(tracker) { loop.tracker(dd,split.to) }
-    ## Every 'flush.freq' iterations clean up the memory, remove the 
-    ##  big.matrix object 'pcCorMat' and re-attach it 
-    if(dd %% flush.freq == 0) {    
-      fl.suc <- bigmemory::flush(pcCorMat) & bigmemory::flush(next.rows)
-      if(!fl.suc) { cat("flush failed\n") } 
-      gc()  # garbage collection
-      if(big.extras) {
-        RR <- bigmemory::describe(pcCorMat)
-        rm(pcCorMat)
-        pcCorMat <- attach.big.matrix(RR,path=dir$big)
-      }
+    pcCorMat[x1:x2, ] <- corrected
+    if (tracker) {
+      loop.tracker(dd, split.to)
     }
-    rm(next.rows) # remove the sub-matrix pointer each iteration or this memory builds up 
+    if (dd %% flush.freq == 0L) {
+      bigmemory::flush(pcCorMat)
+      gc()
+      descriptor <- bigmemory::describe(pcCorMat)
+      rm(pcCorMat)
+      pcCorMat <- bigmemory::attach.big.matrix(descriptor, path = dirs$big)
+    }
+    rm(next.rows)
   }
-  
-  options(bigmemory.allow.dimnames=TRUE)
-  rownames(pcCorMat) <- rN;  colnames(pcCorMat) <- cN 
-  ll <- proc.time()
-  time.taken <- round((ll-jj)[3]/3600,3)
-  if(time.taken>1/180) {  cat(paste(" PC-Correction took",time.taken,"hours\n")) }
-  bigmemory::flush(pcCorMat) # should allow names to take  
-  if(verbose) {
-    cat("\nPC-corrected dataset produced:\n")
-    prv.big.matrix(pcCorMat,name="pcCorMat")
-  }  
-  mat.ref <- bigmemory::describe(pcCorMat)
-  if(write) {
-    if(is.null(big.cor.fn) | !is.character(big.cor.fn)) {
-      big.fn <- paste("describePCcorrect",num.pcs,".RData",sep="")
-    } else {
-      big.fn <- big.cor.fn[1]
-    }
-    ofn <- cat.path(dir$big,big.fn)
-    save(mat.ref,file=ofn)
-    cat(paste("~wrote PC-corrected data description file to:\n ",ofn,"\n"))
-    return(big.fn)
-  } else {
-    return(mat.ref)
+  bigmemory::flush(pcCorMat)
+  descriptor <- bigmemory::describe(pcCorMat)
+  elapsed_minutes <- (proc.time()[3] - start_time) / 60
+  logger("INFO", "PC correction completed in %.2f minutes.", elapsed_minutes)
+  if (verbose) {
+    prv.big.matrix(pcCorMat, name = "pcCorMat")
   }
+  if (write) {
+    if (is.null(big.cor.fn) || !nzchar(big.cor.fn)) {
+      big.cor.fn <- sprintf("describePCcorrect%d.RData", num.pcs)
+    }
+    output_path <- cat.path(dirs$big, big.cor.fn)
+    save(descriptor, file = output_path)
+    logger("INFO", "Saved PC-corrected matrix descriptor to %s", output_path)
+    return(big.cor.fn)
+  }
+  descriptor
 }
 
 
@@ -2884,10 +3248,8 @@ PC.correct <- function(pca.result,bigMat,dir=getwd(),num.pcs=9,n.cores=1,pref="c
 #'  in question is larger than 1GB.
 #' @param file.ok whether to accept big.matrix.descriptors or filenames as input for 
 #'  'bigMat'; if T, then anything that works with get.big.matrix(bigMat,dir) is acceptable
-#' @param delete.existing logical, whether to automatically delete filebacked matrices (if they exist) 
-#' before rewriting. This is because of an update since 20th October 2015 where bigmemory won't allow
-#' overwrite of an existing filebacked matrix. If you wish to set this always TRUE or FALSE, use
-#'  options(deleteFileBacked)
+#' @param delete.existing logical, whether to overwrite any existing transposed matrices that share the
+#'  same prefix before writing the result.
 #' @return A big.matrix that is the transpose (rows and columns switched) of the original matrix
 #' @export
 #' @examples 
@@ -2905,7 +3267,7 @@ PC.correct <- function(pca.result,bigMat,dir=getwd(),num.pcs=9,n.cores=1,pref="c
 #' unlink(c("t.bigMat.RData","t.bigMat.bck","t.bigMat.dsc","test.bck","test.dsc"))
 #' setwd(orig.dir)
 big.t <- function(bigMat,dir=NULL,name="t.bigMat",R.descr=NULL,max.gb=NA,
-                  verbose=F,tracker=NA,file.ok=T,delete.existing=getOption("deleteFileBacked")) {
+                  verbose=F,tracker=NA,file.ok=T,delete.existing=TRUE) {
   #this can be slow!
   if(is.null(R.descr)) { R.descr <- cat.path(dirname(name),name,ext="RData") }
   if(!is.big.matrix(bigMat)) {
