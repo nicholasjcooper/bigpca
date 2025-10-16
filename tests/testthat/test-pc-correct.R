@@ -13,6 +13,9 @@ test_that("PC.correct removes variance captured by the leading PCs", {
     verbose = FALSE,
     delete.existing = TRUE
   )
+  expect_s3_class(pca_result, "bigpca_result")
+  expect_equal(pca_result$metadata$components_requested, pcs_to_keep)
+  expect_equal(pca_result$PCs, pca_result$scores)
 
   corrected_desc <- PC.correct(
     pca_result,
@@ -23,6 +26,7 @@ test_that("PC.correct removes variance captured by the leading PCs", {
     tracker = FALSE,
     verbose = FALSE
   )
+  expect_true(inherits(corrected_desc, "big.matrix.descriptor"))
   corrected <- get.big.matrix(corrected_desc)
   corrected_matrix <- bigmemory::as.matrix(corrected)
 
@@ -31,7 +35,7 @@ test_that("PC.correct removes variance captured by the leading PCs", {
   expect_equal(colnames(corrected_matrix), colnames(mat))
   expect_true(all(abs(rowMeans(corrected_matrix)) < 1e-10))
 
-  pc1 <- pca_result$PCs[, 1]
+  pc1 <- pca_result$scores[, 1]
   correlations <- apply(
     corrected_matrix,
     1,
