@@ -34,6 +34,74 @@
   }
 }
 
+#' Build file paths with optional prefixes and extensions
+#'
+#' This helper centralises how the package constructs file paths for
+#' file-backed big.matrix artefacts while providing optional prefix and
+#' extension handling.
+#'
+#' @param dir Optional directory component.
+#' @param fn Optional filename or vector of filenames.
+#' @param ... Optional character suffix appended to the basename.
+#' @param pref Optional prefix to prepend to the basename.
+#' @param ext Optional extension; a leading dot is added if missing.
+#' @param must.exist Logical indicating whether the resulting path must exist.
+#' @return Character vector of constructed paths.
+#' @keywords internal
+cat.path <- function(dir = NULL, fn = NULL, ..., pref = NULL, ext = NULL, must.exist = FALSE) {
+  pieces <- list(...)
+  suffix <- if (length(pieces)) paste0(vapply(pieces, as.character, character(1)), collapse = "") else ""
+  base <- if (!is.null(fn)) as.character(fn) else ""
+  if (!is.null(pref) && length(pref)) {
+    pref <- as.character(pref)
+    if (!length(base)) {
+      base <- pref
+    } else if (length(pref) == 1L || length(pref) == length(base)) {
+      base <- paste0(pref, base)
+    } else {
+      stop("'pref' must have length 1 or match 'fn'.", call. = FALSE)
+    }
+  }
+  if (!length(base)) {
+    base <- pref %||% ""
+  }
+  if (nzchar(suffix)) {
+    if (length(base) == 1L) {
+      base <- paste0(base, suffix)
+    } else {
+      base <- paste0(base, rep(suffix, length.out = length(base)))
+    }
+  }
+  if (!is.null(ext) && length(ext)) {
+    ext <- as.character(ext)
+    ext <- ifelse(substr(ext, 1, 1) == ".", ext, paste0(".", ext))
+    if (length(ext) == 1L && length(base) > 1L) {
+      ext <- rep(ext, length(base))
+    } else if (length(ext) != length(base)) {
+      stop("'ext' must have length 1 or match 'fn'.", call. = FALSE)
+    }
+    base <- paste0(base, ext)
+  }
+  if (!is.null(dir) && length(dir)) {
+    dir <- as.character(dir)
+    if (length(dir) == 1L && length(base) > 1L) {
+      dir <- rep(dir, length(base))
+    } else if (length(dir) != 1L && length(dir) != length(base)) {
+      stop("'dir' must have length 1 or match 'fn'.", call. = FALSE)
+    }
+    path <- file.path(dir, base)
+  } else {
+    path <- base
+  }
+  if (isTRUE(must.exist)) {
+    missing <- !file.exists(path)
+    if (any(missing)) {
+      stop(sprintf("Path does not exist: %s", paste(path[missing], collapse = ", ")), call. = FALSE)
+    }
+  }
+  path
+}
+
 .bigpca_validate_logical_scalar <- function(x, name) {
   if (!is.logical(x) || length(x) != 1L || is.na(x)) {
     stop(sprintf("%s must be a non-missing logical scalar.", name), call. = FALSE)
@@ -337,22 +405,33 @@ print.bigpca_result <- function(x, ...) {
 # use: keeper <- manage.test.files() at start of example
 # then: unlink(bigpca:::manage.test.files(FALSE,keepers)) at end of examples
 # then inspect the example output for warnings with unlink()
-manage.test.files <- function(start=TRUE,keepers=NULL) {
-  test.files <- c("testMyBig.bck","t.bigMat.bck","splitmatR1.bck","split1.bck","sel.bck","functestdn.bck","functest.bck","funclongcol.bck","t.bigMat.RData",
-    "sel.RData","functestdn.RData","fn.RData","testMyBig.dsc","t.bigMat.dsc","splitmatR1.dsc","split1.dsc","sel.dsc","functestdn_file_rowname_list_check_this.txt",
-    "functestdn.dsc","functest.dsc","funclongcol.dsc","bigrowstemp.txt","bigcolstemp.txt","test.dsc","test.bck")
-  if(start) { 
-    ii <- which(list.files() %in% test.files) 
-    if(length(ii)>0) { keepers <- list.files()[ii] }
-    return(keepers)
-  } else {
-    ii <- which(list.files() %in% test.files[!test.files %in% keepers]) 
-    if(length(ii)>0) { 
-      killers <- list.files()[ii] 
-      warning("unlink(",paste(killers,collapse=","),")")
-    } else { killers <- NULL }
+manage.test.files <- function(start = TRUE, keepers = NULL, path = getwd()) {
+  start <- .bigpca_validate_logical_scalar(start, "start")
+  if (!dir.exists(path)) {
+    stop("The supplied 'path' does not exist.", call. = FALSE)
   }
-  return(killers)
+  fixtures <- c(
+    "testMyBig.bck", "t.bigMat.bck", "splitmatR1.bck", "split1.bck", "sel.bck", "functestdn.bck", "functest.bck", "funclongcol.bck", "t.bigMat.RData",
+    "sel.RData", "functestdn.RData", "fn.RData", "testMyBig.dsc", "t.bigMat.dsc", "splitmatR1.dsc", "split1.dsc", "sel.dsc", "functestdn_file_rowname_list_check_this.txt",
+    "functestdn.dsc", "functest.dsc", "funclongcol.dsc", "bigrowstemp.txt", "bigcolstemp.txt", "test.dsc", "test.bck"
+  )
+  files_present <- intersect(fixtures, list.files(path))
+  if (start) {
+    return(files_present)
+  }
+  keepers <- if (is.null(keepers)) character() else as.character(keepers)
+  stale <- setdiff(files_present, keepers)
+  if (length(stale)) {
+    warning(
+      sprintf(
+        "Test fixture files remaining in '%s': %s",
+        path,
+        paste(stale, collapse = ", ")
+      ),
+      call. = FALSE
+    )
+  }
+  stale
 }
 
 
@@ -1114,141 +1193,6 @@ get.big.matrix <- function(fn,dir="",verbose=FALSE)
 
 
 
-# internal? function to quickly extract whether a delimited matrix
-# has row or column names, and what the column names are
-quick.mat.format <- function(fn) {
-  temp.fn <- "twmpwerw123.txt"
-  txtx <- readLines(fn,n=11) # change this to like 5 when reader is updated to save memory
-  writeLines(txtx,con=temp.fn)
-  first2 <- reader(temp.fn)
-  unlink(temp.fn) # remove this temporary file straight away
-  if(is.null(dim(first2))) {
-    ## assuming no header row #
-    return(list(rownames=F,colnames=F,ncol=1,cnames=NULL))
-  }
-  rn <- rownames(first2); if(rn[1]=="1") { rn <- NULL }
-  if(!is.null(rn)) { ern <- T } else { ern <- F }
-  cn <- colnames(first2); if(cn[1]=="V1") { cn <- NULL }
-  if(!is.null(cn)) { ecn <- T } else { ecn <- F }
-  ncl <- ncol(first2)
-  return(list(rownames=ern,colnames=ecn,ncol=ncl,cnames=cn))
-}
-
-
-## internal function for import.big.matrix
-check.text.matrix.format <- function(fn,ncol=NA,header=NULL,row.names=NULL,sep="\t") 
-{
-  # read the first two lines of a text matrix file and determine
-  # whether it has row and or column names, return T/F indices for this
-  # plus a further 
-  # assumes tab as separator
-  fn <- fn[1]
-  if(!is.character(fn)) { warning("file name 'fn' should be a character()") }
-  if(!file.exists(fn)) { stop(paste("Error: file",fn,"not found")) } 
-  dat.file <- file(fn); headrow <- NULL
-  rnames.in.file <- F; first.is.head <- F; name.lookup <- F
-  # read first two lines of matrix format datafile
-  open(con=dat.file,open="r")
-  next.line <- readLines(dat.file,n=1)
-  line1 <- strsplit(next.line,sep,fixed=T)[[1]]
-  next.line <- readLines(dat.file,n=1)
-  line2 <- strsplit(next.line,sep,fixed=T)[[1]]
-  close(con=dat.file)
-  ## check whether first row is header or just plain data
-  frst <- length(line1)
-  scnd <- length(line2)
-  if(is.na(ncol)) {
-    if((scnd-frst)==1) { rnames.in.file <- T; first.is.head <- T; name.lookup <- F;
-                         headrow <- line1 }
-  } else {
-   # prv(c("frst","ncol"))
-    if (frst!=ncol & frst!=ncol+1) {
-      #preview(c("frst","ncol"))
-      stop("dimensions of import file do not match id lists specified, exiting")
-    } else {
-      if(length(which(paste(line1[1:10]) %in% paste(header)))>8) {
-        # first line seems to be the header
-        if(!all(header==paste(line1[(frst-ncol+1):frst]))) {
-          stop("Error: ID list did not match file header. Please check the files (bash$ head -1 <filename>) and fix this")
-        } else {
-          # will need to go to next line to avoid reading header as data
-          first.is.head <- T
-        }
-      } else {
-        first.is.head <- F
-      }
-    }
-    ## check whether second row starts with a rowname, or just plain data
-    if(length(line2)==ncol+1) {
-      rnames.in.file <- T
-    } else {
-      # seem to be no rownames in file
-      rnames.in.file <- F
-    }
-  }
-  # if colnames row found + header specified, check they are the same
-  if(first.is.head & !is.null(header)) {
-    if(!all(paste(line1)==paste(header))) {
-      if(!paste(line2[1]) %in% paste(header)) {
-        warning("there seems to be a header of column labels in the raw file but not the header specified\n",
-                "proceeding with these, but please check this mismatch is expected (e.g, might be col numbers)")
-        name.lookup <- F
-      } else {
-        warning("order of header (column labels) in data file does not match order of inputted 'header' list\n",
-                "proceeding, but using name lookup method will make import very slow and possibly unstable\n",
-                "If your source file has an inconsistent order this is the only supported import method.\n",
-                "Otherwise, recommend to cancel (ctrl-C), amend this discrepancy and run again")
-        name.lookup <- T
-      }
-    }
-  }
-  # if rownames row found + rownames specified, check they are the same
-  if(rnames.in.file & !is.null(row.names)) {
-   # prv(c("line2","row.names"),counts=list(1,1))
-    if(!paste(line2[1]) %in% paste(row.names[1:2])) {
-      if(!paste(line2[1]) %in% paste(row.names)) {
-        warning("there seem to be row labels in the raw file but not the rownames specified\n",
-                "proceeding with these, but please check this mismatch is expected (e.g, might be row numbers)")
-        name.lookup <- F
-      } else {
-        warning("order of row labels in data file does not match order of inputted rowname list\n",
-                "proceeding, but using name lookup method will make import very slow and possibly unstable\n",
-                "If your source file has an inconsistent order this is the only supported import method.\n",
-                "Otherwise, recommend to cancel (ctrl-C), amend this discrepancy and run again")
-        name.lookup <- T
-      }
-    }
-  }
-  out <- list(first.is.head,rnames.in.file,name.lookup,headrow)
-  names(out) <- c("header","rnames","match","colnames")
-  return(out)
-}
-
-
-
-# # patch some reader functions that cause trouble for long format files :(
-# # fix problem in reader:::get.delim :(
-# get.delim <- function(...,delims=c("\t"," ","\t| +",";",",")) {
-#   return(reader:::get.delim(...,delims=delims))
-# }
-# # fix problem in reader:::file.ncol :(
-# file.ncol <- function(fn,...) { reader:::file.ncol(fn,del=get.delim(fn),...) }
-# 
-# # add some more known extensions to rmv.ext
-# rmv.ext <- function(...) {
-#   return(reader:::rmv.ext(...,more.known=c("RDA","DSC","BCK")))
-# }
-
-
-#' Generate a test matrix of random data
-#' 
-#' Generates a test matrix of easily specified size and type. Options allow
-#' automated row and column names (which might resemble labels for a SNP analysis)
-#' and return of several different formats, matrix, data.frame or big.matrix.
-#' You can specify the randomisation function (e.g, rnorm, runif, etc), as well
-#' as parameters determining the matrix size. Can also generate big.matrix objects,
-#' and an important feature is that the method to generate big.matrix objects is
-#' scalable so that very large matrices for simulation can be generated only limited
 #' by disk space and not by RAM.
 #' @param size 10^size is the total number of datapoints simulated. 6 or less are fairly quick to generate,
 #'  while 7 takes a few seconds. 8 will take under a minute, 9 around ten minutes, 10, perhaps over an hour.
@@ -1333,510 +1277,665 @@ generate.test.matrix <- function(size=5,row.exp=2,rand=rnorm,dimnames=TRUE,
 
 
 #' Internal function used by import.big.data
-dir.force.slash <- function(dir) {
-  # make sure 'dir' directory specification ends in a / character
-  if(!is.null(dim(dir))) { stop("dir should be a vector") }
-  dir <- paste(dir)
-  dir.ch <- .Platform$file.sep
-  the.test <- (dir!="" & substr(dir,nchar(dir),nchar(dir))!=dir.ch)
-  dir[the.test] <- paste(dir[the.test],dir.ch,sep="")
-  return(dir)
+.bigpca_normalise_dirs <- function(dir, elements = c("big", "ano", "col")) {
+  if (exists("validate.dir.for", mode = "function")) {
+    validated <- do.call("validate.dir.for", list(dir = dir, elements = elements, warn = FALSE))
+    if (!is.list(validated)) {
+      stop("validate.dir.for must return a list of directories.", call. = FALSE)
+    }
+    missing <- setdiff(elements, names(validated))
+    if (length(missing)) {
+      stop(sprintf("validate.dir.for did not provide entries for: %s", paste(missing, collapse = ", ")), call. = FALSE)
+    }
+    return(validated[elements])
+  }
+  if (is.null(dir)) {
+    dir <- getwd()
+  }
+  if (is.list(dir)) {
+    out <- vapply(elements, function(el) {
+      candidate <- dir[[el]]
+      if (is.null(candidate) || !nzchar(candidate)) {
+        fallback <- dir[[1]] %||% getwd()
+        return(fallback)
+      }
+      candidate
+    }, character(1))
+  } else if (is.character(dir) && length(dir) >= 1L) {
+    base <- dir[1] %||% getwd()
+    out <- rep(base, length(elements))
+  } else {
+    stop("dir must be a character scalar or a named list.", call. = FALSE)
+  }
+  names(out) <- elements
+  as.list(out)
 }
 
+.bigpca_import_resolve_data_type <- function(dat.type) {
+  dat.type <- tolower(dat.type %||% "double")
+  switch(
+    dat.type,
+    double = list(big = "double", storage = "double", bytes = 8L, readr = readr::col_double()),
+    numeric = list(big = "double", storage = "double", bytes = 8L, readr = readr::col_double()),
+    integer = list(big = "integer", storage = "integer", bytes = 4L, readr = readr::col_integer()),
+    short = list(big = "short", storage = "double", bytes = 8L, readr = readr::col_double()),
+    char = list(big = "char", storage = "character", bytes = 1L, readr = readr::col_character()),
+    character = list(big = "char", storage = "character", bytes = 1L, readr = readr::col_character()),
+    stop(sprintf("Unsupported dat.type '%s'.", dat.type), call. = FALSE)
+  )
+}
 
-#' Load a text file into a big.matrix object
-#'
-#' This provides a faster way to import text data
-#' into a big.matrix object than bigmemory::read.big.matrix(). The
-#' method allows import of a data matrix with size exceeding RAM limits.
-#' Can import from a matrix delimited file with or without row/column names,
-#' or from a long format dataset with no row/columns names (these should be
-#' specified as separate lists).
-#' @param input.fn character, or list, either a single file name of the data, or
-#'  a list of multiple file name if the data is stored as multiple files. If multiple,
-#'  then the corresponding list of row or column names that is unique between files
-#'  should be a list of the same length.
-#' @param dir character, the directory containing all files. Or, if files are split between
-#'  directories, then either include the directories explicitly in the filenames, or
-#'  multiple directories can be entered as a list, with names 'big', 'ano' and 'col', where
-#'  big is the location for big.matrix objects to file-back to, 'ano' is the location
-#'  of row and column names, and 'col' is the location of the raw text datafiles.
-#' @param long logical, if TRUE, then the data is assumed to be in long format, where
-#'  each datapoint is on a new line, and the file is structured so that the data for
-#'  each case/sample/id is consecutive and ordered consistently between samples. If using
-#'  long format the file should contain no row or column names, these should be specified
-#'  in either rows.fn/cols.fn file name arguments, or row.names/col.names vector arguments.
-#'  If long=FALSE, then the dimensions of the file will be automatically detected; including
-#'  if the file is in long format, however, if you know the data is in long format, specifying
-#'  this explicitly will be quicker and guarantees the correct import method.
-#' @param rows.fn character, with the name of a text file containing the list of row labels
-#'  for the dataset. Unnecessary if importing from a matrix with row/column names in the file,
-#'  or if using the row.names parameter. Must be a list of filenames if row names are split
-#'  across multiple input.fn files.
-#' @param cols.fn character, with the name of a text file containing the list of column labels
-#'  for the dataset. Unnecessary if importing from a matrix with row/column names in the file,
-#'  or if using the col.names parameter. Must be a list of filenames if column names are split
-#'  across multiple input.fn files.
-#' @param pref character, optional prefix to use in naming the big.matrix files (description/backing files)
-#' @param delete.existing logical, if a big.matrix already exists with the same name as implied
-#'  by the current 'pref' and 'dir' arguments, then default behaviour (FALSE) is to return an error.
-#'  to overwrite any existing big.matrix file(s) of the same name(s), set this parameter to TRUE.
-#' @param ret.obj logical, whether to return a big.matrix.descriptor object (TRUE), or
-#'  just the file name of the big.matrix description file of the imported dataset.
-#' @param verbose logical, whether to display extra information about import progress and
-#'  notifications.
-#' @param row.names character vector, optional alternative to specifying rows.fn file name(s),
-#'  directly specify row names as a single vector, or a list of vectors if multiple input files
-#'  with differing row names are being imported.
-#' @param col.names character vector, optional alternative to specifying cols.fn file name(s),
-#'  directly specify oclumn names as a single vector, or a list of vectors if multiple input files
-#'  with differing column names are being imported.
-#' @param dat.type character, data type being imported, default is "double", but can specify any type
-#'  supported by a filebacked.big.matrix(), namely, "integer","char","short"; note these
-#'  are C-style data types; double=numeric, char=character, integer=integer, short=numeric (although
-#'  will be stored with less precision in the C-based big.matrix object).
-#' @param ram.gb numeric, the number of gigabytes of free RAM that it is ok for the import
-#'  to use. The higher this amount, the quicker the import will be, as flushing RAM contents
-#'  to the hard drive more regularly slows down the process. Setting this lower
-#'  will reduce the RAM footprint of the import. Note that if you set it too high, it can't
-#'  be guaranteed, but usually R and bigmemory will do a reasonable job of managing the memory,
-#'  and it shouldn't crash your computer.
-#' @param hd.gb numeric, the amount of free space on your hard disk; if you set this
-#'  parameter accurately the function will stop if it believes there is insufficient
-#'  disk space to import the object you have specified. By default this is set to 
-#'  1 terabyte, so if importing an object larger than that, you will have to increase
-#'  this parameter to make it work.
-#' @param tracker logical, whether to display a progress bar for the importing process
-#' @return Returns a big.matrix containing the data imported (single big.matrix even
-#'  when text input is split across multiple files)
-#' @export
-#' @examples 
-#' orig.dir <- getwd(); setwd(tempdir()); # move to temporary dir
-#' # Collate all file names to use in this example #
-#' all.fn <- c("rownames.txt","colnames.txt","functestdn.txt","funclongcol.txt","functest.txt",
-#'  paste("rn",1:3,".txt",sep=""),paste("cn",1:3,".txt",sep=""),
-#'  paste("split",1:3,".txt",sep=""),
-#'  paste("splitmatCd",1:3,".txt",sep=""),paste("splitmatRd",1:3,".txt",sep=""),
-#'  paste("splitmatC",1:3,".txt",sep=""), paste("splitmatR",1:3,".txt",sep=""))
-#' any.already <- file.exists(all.fn)
-#' if(any(any.already)) { 
-#'  warning("files already exist in the working directory with the same names as some example files") }
-#' # SETUP a test matrix and reference files # 
-#' test.size <- 4 # try increasing this number for larger matrices
-#' M <- matrix(runif(10^test.size),ncol=10^(test.size-2)) # normal matrix
-#' write.table(M,sep="\t",col.names=FALSE,row.names=FALSE,
-#'  file="functest.txt",quote=FALSE) # no dimnames
-#' rown <- paste("rs",sample(10:99,nrow(M),replace=TRUE),sample(10000:99999,nrow(M)),sep="")
-#' coln <- paste("ID",sample(1:9,ncol(M),replace=TRUE),sample(10000:99999,ncol(M)),sep="")
-#' r.fn <- "rownames.txt"; c.fn <- "colnames.txt"
-#' Mdn <- M; colnames(Mdn) <- coln; rownames(Mdn) <- rown
-#' # with dimnames
-#' write.table(Mdn,sep="\t",col.names=TRUE,row.names=TRUE,file="functestdn.txt",quote=FALSE) 
-#' prv.large(Mdn)
-#' writeLines(paste(as.vector(M)),con="funclongcol.txt")
-#' in.fn <- "functest.txt"
-#' 
-#' ### IMPORTING SIMPLE 1 FILE MATRIX ##
-#' writeLines(rown,r.fn); writeLines(coln,c.fn)
-#' #1. import without specifying row/column names
-#' ii <- import.big.data(in.fn); prv.big.matrix(ii) # SLOWER without dimnames!
-#' #2. import using row/col names from file
-#' ii <- import.big.data(in.fn,cols.fn="colnames.txt",rows.fn="rownames.txt", pref="p1")
-#' prv.big.matrix(ii)
-#' #3. import by passing colnames/rownames as objects
-#' ii <- import.big.data(in.fn, col.names=coln,row.names=rown, pref="p2")
-#' prv.big.matrix(ii)
-#' 
-#' ### IMPORTING SIMPLE 1 FILE MATRIX WITH DIMNAMES ##
-#' #1. import without specifying row/column names, but they ARE in the file
-#' in.fn <- "functestdn.txt"
-#' ii <- import.big.data(in.fn, pref="p3"); prv.big.matrix(ii)
-#' 
-#' ### IMPORTING SIMPLE 1 FILE MATRIX WITH MISORDERED rownames ##
-#' rown2 <- rown; rown <- sample(rown);
-#' # re-run test3 using in.fn with dimnames
-#' ii <- import.big.data(in.fn, col.names=coln,row.names=rown, pref="p4")
-#' prv.big.matrix(ii)
-#' # restore rownames: 
-#' rown <- rown2
-#' 
-#' ### IMPORTING SIMPLE 1 FILE LONG FORMAT by columns ##
-#' in.fn <- "funclongcol.txt"; #rerun test 2 # 
-#' ii <- import.big.data(in.fn,cols.fn="colnames.txt",rows.fn="rownames.txt", pref="p5")
-#' prv.big.matrix(ii)
-#' 
-#' ### IMPORTING multifile LONG by cols ##
-#' # create the dataset and references
-#' splF <- factor(rep(c(1:3),ncol(M)*c(.1,.5,.4)))
-#' colnL <- split(coln,splF); MM <- as.data.frame(t(M))
-#' Ms2 <- split(MM,splF)
-#' Ms2 <- lapply(Ms2,
-#'    function(X) { X <- t(X); dim(X) <- c(nrow(M),length(X)/nrow(M)); X } )
-#' # preview Ms2 - not run # lapply(Ms2,prv.large)
-#' colfs <- paste("cn",1:length(colnL),".txt",sep="")
-#' infs <- paste("split",1:length(colnL),".txt",sep="")
-#' # create multiple column name files and input files
-#' for(cc in 1:length(colnL)) { writeLines(colnL[[cc]],con=colfs[cc]) }
-#' for(cc in 1:length(infs)) { 
-#'   writeLines(paste(as.vector((Ms2[[cc]]))),con=infs[cc]) }
-#'   
-#' # Now test the import using colnames and rownames lists
-#' ii <- import.big.data(infs, col.names=colnL,row.names=rown, pref="p6")
-#' prv.big.matrix(ii)
-#' 
-#' ### IMPORTING multifile MATRIX by rows ##
-#' # create the dataset and references
-#' splF <- factor(rep(c(1,2,3),nrow(M)*c(.1,.5,.4)))
-#' rownL <- split(rown,splF)
-#' Ms <- split(M,splF)
-#' Ms <- lapply(Ms,function(X) { dim(X) <- c(length(X)/ncol(M),ncol(M)); X } )
-#' # preview Ms - not run # lapply(Ms,prv.large)
-#' # create multiple row name files and input files
-#' rowfs <- paste("rn",1:length(rownL),".txt",sep="")
-#' for(cc in 1:length(rownL)) { writeLines(rownL[[cc]],con=rowfs[cc]) }
-#' infs <- paste("splitmatR",1:length(colnL),".txt",sep="")
-#' for(cc in 1:length(infs)) { 
-#'  write.table(Ms[[cc]],sep="\t",col.names=FALSE,row.names=FALSE,file=infs[cc],quote=FALSE) }
-#'  
-#' # Now test the import using colnames and rownames files
-#' ii <- import.big.data(infs, col.names="colnames.txt",rows.fn=rowfs, pref="p7")
-#' prv.big.matrix(ii)
-#' 
-#' # DELETE ALL FILES ##
-#' unlink(all.fn[!any.already]) # prevent deleting user's files
-#' ## many files to clean up! ##
-#' unlink(c("funclongcol.bck","funclongcol.dsc","functest.bck","functest.dsc",
-#'  "functestdn.RData","functestdn.bck","functestdn.dsc","functestdn_file_rowname_list_check_this.txt",
-#'  "split1.bck","split1.dsc","splitmatR1.bck","splitmatR1.dsc", paste0("p",2:7)))
-#' setwd(orig.dir) # reset working dir to original
-import.big.data <- function(input.fn=NULL, dir=getwd(), long=FALSE, rows.fn=NULL, cols.fn=NULL, 
-                              pref="", delete.existing=TRUE, ret.obj=FALSE, verbose=TRUE, row.names=NULL, col.names=NULL,
-                              dat.type="double", ram.gb=2, hd.gb=1000, tracker=TRUE)
-{
-  # import from a text (hopefully long format) datafile to a big.matrix
-  # return bigmatrix description 'object' or name of description file according to 'ret.obj'
-  ### CALIBRATE OPTIONS AND PERFORM CHECKS ###
-  ## dir.force.slash <- reader:::dir.force.slash # dont use internal function from 'reader'
-  if(all(dir=="")) { dir <- getwd() }
-  ## for compatibility with plumbCNV directory object
-  if(exists("validate.dir.for",mode="function")) {
-    ## plumbCNV specific code ##
-    dir <- do.call("validate.dir.for",list(dir=dir,elements=c("big","ano","col"),warn=FALSE))  
-  } else {
-    # otherwise
-    dir <- list(big=dir,ano=dir,col=dir)
-    if(is.list(dir)) { if(!is.null(dir[["big"]])) { dir.big <- dir$big } }
+.bigpca_import_count_lines <- function(path) {
+  con <- file(path, open = "r")
+  on.exit(close(con), add = TRUE)
+  total <- 0L
+  repeat {
+    lines <- readLines(con, n = 50000)
+    if (!length(lines)) {
+      break
+    }
+    total <- total + length(lines)
   }
-  dat.type <- tolower(dat.type)
-  if(!dat.type %in% c("double","short","character","integer","char","numeric")) {
-    dat.type <- options()$bigmemory.default.type; as.type <- dat.type
-  } else {
-    as.type <- dat.type
-    if(dat.type=="short") { as.type <- "numeric" }
-    if(dat.type=="char") { as.type <- "character" }
-    if(dat.type=="character") { dat.type <- "char" }
-    if(dat.type=="numeric") { dat.type <- "double" }
+  total
+}
+
+.bigpca_import_is_numeric_vector <- function(x) {
+  suppressWarnings(!is.na(as.numeric(x)))
+}
+
+.bigpca_import_probe_file <- function(path, delim = "\t") {
+  con <- file(path, open = "r")
+  on.exit(close(con), add = TRUE)
+  first_line <- readLines(con, n = 1)
+  if (!length(first_line)) {
+    stop(sprintf("File '%s' is empty.", path), call. = FALSE)
   }
-  ## Define data types for big.matrix
-    # label
-  input.fn <- cat.path(dir$col,input.fn)
-  file.rn <- character()
-  spec.rn <- spec.cn <- T; miswarn <- F
-  #### GET THE SHAPED INPUT FILE NAME(S) ####
-  # print(input.fn)
-  if(length(input.fn)>1 & ((is.null(rows.fn)&is.null(row.names)) | (is.null(cols.fn)&is.null(col.names)))) {
-    stop(paste("When using multiple input files, you must specify row and column names using",
-               "row.names + col.names, or rows.fn + cols.fn.",
-               "If the input files split the dataset by columns, then the column file names need",
-               "to be entered as a list corresponding to unique column names in each input.fn entry,",
-               "OR equivalently, a equal length list of row names if the data is split by rows"))
+  second_line <- readLines(con, n = 1)
+  if (!length(second_line)) {
+    stop(sprintf("File '%s' has only a single line; unable to infer structure.", path), call. = FALSE)
   }
-  #### GET THE CORRESPONDING column LIST(S) ####
-  if((length(col.names)>length(input.fn)) | is.list(col.names)) {
-    if(is.list(col.names))  {
-      if(all(sapply(col.names,is)[1,]=="character")) {
-        ID.list <- col.names
-      }
+  first_fields <- strsplit(first_line, delim, fixed = TRUE)[[1]]
+  second_fields <- strsplit(second_line, delim, fixed = TRUE)[[1]]
+  header <- any(!.bigpca_import_is_numeric_vector(first_fields))
+  row_names_in_file <- length(second_fields) > 0L && !.bigpca_import_is_numeric_vector(second_fields[1])
+  header_fields <- if (header) {
+    if (row_names_in_file && length(first_fields) == length(second_fields)) {
+      first_fields[-1]
     } else {
-      ID.list <- list(col.names)
+      first_fields
     }
   } else {
-    if(all(!is.null(cols.fn))) {
-      cols.fn <- find.file(cols.fn,dir$ids)  # column id file name
-      cat("Reading column and row names...\n")
-      cat(paste(" reading column names from",cols.fn,"\n"),sep="")
-      ID.list <- lapply(cols.fn,readLines)  #readLines(cols.fn)
-    } else {
-      cat("no column names specified\n"); spec.cn <- F
-      ll <- max(1,length(cols.fn))
-      ID.list <- vector("list",ll)
-      qmf <- quick.mat.format(input.fn[1])
-      if(qmf$ncol==1 | long)  { stop("If reading a long format file, must provide row and column names directly, or via filenames") }
-      ecn <- qmf$colnames
-      ern <- qmf$rownames; #prv("ern")
-      if(ecn) {
-        for (cc in 1:ll) { ID.list[[cc]] <- quick.mat.format(input.fn[cc])$cnames }
-      } else {
-        for (cc in 1:ll) { ID.list[[cc]] <- paste("col",1:file.ncol(input.fn[cc],excl.rn=ern),sep="") }
-      }
-    }
+    character()
   }
-  ##print(headl(ID.list))
-  cmb.ID.list <- paste(unlist(do.call("c",ID.list)))
-  if(anyDuplicated(cmb.ID.list)) { stop("Cannot have duplicated column names") }
-  ##print(length(ID.list[[1]]))
-  num.c.fls <- length(ID.list)
-  ### GET THE ORDERED row LIST ###
-  if((length(row.names)>length(input.fn)) | is.list(row.names)) {
-    if(is.list(row.names))  {
-      if(all(sapply(row.names,is)[1,]=="character")) {
-        rows.list <- row.names
-      }
-    } else {
-      rows.list <- list(row.names)
-    }
-  } else {
-    if(all(!is.null(rows.fn))) {
-      rows.fn <- find.file(rows.fn,dir$ano,dir)  # row annotation file name
-      cat(paste(" reading row names from",rows.fn,"\n"),sep="")
-      rows.list <- lapply(rows.fn,readLines)  #readLines(cols.fn)
-    } else {
-      cat("no row names specified\n"); spec.rn <- F
-      ll <- max(1,length(cols.fn))
-      rows.list <- vector("list",ll)
-      ecn <- as.numeric(quick.mat.format(input.fn[1])$colnames)
-      for (cc in 1:ll) { 
-        nr <- (file.nrow(input.fn[cc])-ecn)
-        rows.list[[cc]] <- paste("row",1:nr,sep="") 
-      }
-    }
+  ncol <- length(second_fields) - if (row_names_in_file) 1L else 0L
+  if (ncol <= 0L) {
+    stop(sprintf("Unable to infer number of data columns in '%s'.", path), call. = FALSE)
   }
-  cmb.row.list <- paste(unlist(do.call("c",rows.list)))
-  if(anyDuplicated(cmb.row.list)) { stop("Cannot have duplicated row names") }
-  if(length(rows.list)>1 & length(ID.list)>1) {
-    warning("cannot enter both multiple row and column file names")
+  list(
+    header = header,
+    row_names_in_file = row_names_in_file,
+    header_fields = header_fields,
+    ncol = ncol
+  )
+}
+
+.bigpca_import_default_names <- function(prefix, n) {
+  sprintf("%s%d", prefix, seq_len(n))
+}
+
+.bigpca_import_compute_chunk_size <- function(ncol, bytes_per_cell, ram_gb) {
+  if (!is.numeric(ram_gb) || !length(ram_gb) || is.na(ram_gb)) {
+    ram_gb <- 1
+  }
+  ram_bytes <- ram_gb * (1024^3)
+  if (!is.finite(ram_bytes) || ram_bytes <= 0) {
+    ram_bytes <- 128 * 1024^2
+  }
+  denom <- max(bytes_per_cell * max(1L, ncol), 1)
+  chunk <- floor(ram_bytes / denom)
+  max(1L, chunk)
+}
+
+.bigpca_import_read_vector_file <- function(files, base_dir, label) {
+  files <- unlist(files)
+  if (!length(files)) {
     return(NULL)
   }
-  num.r.fls <- length(rows.list)
-  numfls <- num.r.fls*num.c.fls # one of these should be 1
-  if(length(rows.list)>1) {
-    multi.mode <- T; col.mode <- F
-  } else {
-    if(length(ID.list)>1) {
-      multi.mode <- T; col.mode <- T
-    } else {
-      multi.mode <- F; col.mode <- T
+  lapply(files, function(f) {
+    path <- if (!is.null(base_dir) && nzchar(base_dir)) cat.path(base_dir, f, must.exist = TRUE) else f
+    if (!file.exists(path)) {
+      stop(sprintf("%s name file '%s' was not found.", tools::toTitleCase(label), f), call. = FALSE)
     }
-  }
-  # determine what set of input files have been specified
-  if(length(input.fn)>1) {
-    if(length(input.fn)==numfls) {
-      if(verbose) {
-        if(col.mode) {
-          cat(paste("reading a single cohort from",numfls,"source files.\n"))
-        } else {
-          cat(paste("reading a single varset from",numfls,"source files.\n"))
-        }
-      }
-    } else {
-      stop("Error: when reading from multiple source files, need an equal number of row or col id files")
-    }
-  } else { if(numfls!=1) { warning(paste("length of ID list was",numfls,"but only 1 input file")) } } 
-  #### DETERMINE FILE DIMENSIONS ####
-  num.sub <- length(cmb.ID.list) #ID.list)
-  smp.szs <- sapply(ID.list,length)
-  num.row <- length(cmb.row.list)
-  row.szs <- sapply(rows.list,length)
-  #prv(c("num.sub","num.row","cmb.ID.list","cmb.row.list"))
-  if(col.mode) {
-    fil.ofs <- c(0,cumsum(smp.szs)) #note last element is the end of the last file
-  } else {
-    fil.ofs <- c(0,cumsum(row.szs))
-  }
-  cat(paste(" found",num.sub,"column names and",num.row,"marker names\n"))
-  cls <- num.sub; rws <- num.row
-  #cells.per.gb <- 2^27  # size of double() resulting in ~1GB of memory use by R 2.15
-  #memory.estimate <- as.double((as.double(rws)*as.double(cls))/cells.per.gb)
-  em <- estimate.memory(c(rws,cls))
-  if (em > hd.gb) {
-    stop(paste("Insufficient disk space availability (hd.gb) expected for this import method\n",
-     "Please free up some disk space and try again",sep=""))
-  } else {
-    divs <- em/(ram.gb/2) # aim to flush once memory reaches half of RAM
-    if(divs<1) { do.fl <- F } else { do.fl <- T }
-    divs <- round(divs)
-  }
-  # use 'pref' as the name of the big.matrix backing files for this cohort
-  if(pref=="") { pref <- rmv.ext(basename(input.fn))[1] }
-  bck.fn <- paste(pref,"bck",sep=".")
-  des.fn <- paste(pref,"dsc",sep=".")
-  rda.fn <- paste(pref,"RData",sep=".")
-  ### DELETE EXISTING FILE IF HAS SAME NAME ###
-  if ((!des.fn %in% list.files(dir$big)) | delete.existing )
-  {
-    if(delete.existing & (des.fn %in% list.files(dir$big)))
-    {
-      dfn <- cat.path(dir$big,des.fn)
-      cat("\n deleting",dfn,"\n")
-      unlink(dfn)
-    } else {
-      #all clear, no files already exist with same name
-    }
-  } else {
-    cat(paste("\nWarning: Big matrix description file",des.fn,"already exists in",dir$big,"\n"))
-    cat("You may wish to delete, rename or move this file, or use option 'delete.existing'=T, before re-running this script\n")
-    #stop()
-  }
-  ### MAIN IMPORT LOOP ###
-  cat("\nCreating big matrix object to store group data")
-  cat("\n predicted disk use: ",round(em,1),"GB\n")
-  if(is.character(dir.force.slash(dir$big))) { if(dir$big=="") { dir$big <- getwd() } }
-  if(delete.existing & file.exists(cat.path(dir$big,bck.fn))) { unlink(cat.path(dir$big,bck.fn)) }
-  bigVar <- big.matrix(nrow=rws,ncol=cls, backingfile=bck.fn, dimnames=list(cmb.row.list,cmb.ID.list),
-                       type=dat.type, backingpath=dir.force.slash(dir$big),
-                       descriptorfile=des.fn)
-  for(ff in 1:numfls) {
-    ifn <- cat.path(dir$col,input.fn[ff],must.exist=T)
-    if(col.mode) { ffc <- ff; ffr <- 1 } else { ffc <- 1; ffr <- ff }
-    # previously: create file name depending on whether in baf or lrr directory
-    #test file type if matrix
-    #preview(c("ff","numfls","ifn","col.mode","ffr","ffc"))
-    if(long) { input.is.vec <- T } else {
-      ncifn <- file.ncol(ifn); if(is.na(ncifn)) { stop("input file ",ifn," was empty") }
-      if(ncifn>1) { input.is.vec <- F } else { input.is.vec <- T }
-    }
-    nxt.rng <- (fil.ofs[ff]+1):(fil.ofs[ff+1])
-    #preview("nxt.rng")
-    if(col.mode) { cls1 <- length(nxt.rng); rws1 <- rws } else { cls1 <- cls; rws1 <- length(nxt.rng) }
-    #preview(c("cls1","rws1","cls","rws"))
-    if(!input.is.vec) {
-      if(spec.rn & spec.cn) {
-        frm <- check.text.matrix.format(fn=ifn,ncol=cls1,header=ID.list[[ffc]],row.names=rows.list[[ffr]])
-        #prv(c("cls1","rws1","cls","frm"))
-      } else {
-        frm <- check.text.matrix.format(fn=ifn)
-        if(!is.null(frm$colnames)) { ID.list[[ff]][1:length(frm$colnames)] <- frm$colnames }
-      }
-      if(frm$rname & !frm$match) { file.rn <- character(rws) } # recording rownames as we go
-      if(frm$match & !col.mode) { stop("cannot use matching method with separate files by rows") }
-    }
-    dat.file <- file(ifn)
-    open(con=dat.file,open="r")
-    cat(paste(" opening connection to ",c("matrix","long")[1+input.is.vec],
-              " format datafile (",ff,"/",numfls,"): ",basename(ifn),"\n",sep=""))
-    cat("\nLoading text data into big matrix object:\n")
-    if(!input.is.vec)
-    {
-      ## read from matrix format tab file
-      twty.pc <- round(rws1/divs) # flush data every 'n' rows
-      for (cc in 1:rws1) {
-        if (do.fl & (cc %% twty.pc)==0)  { fl.suc <- bigmemory::flush(bigVar) ; if(!fl.suc) { cat("flush failed\n") } }
-        if(tracker) { loop.tracker(cc,rws1) }
-        next.line <- readLines(dat.file,n=1)
-        next.row <- strsplit(next.line,"\t",fixed=T)[[1]]
-        if (cc==1 & frm$header) { 
-          # need to go to next line to avoid reading header as data
-          next.line <- readLines(dat.file,n=1); next.row <- strsplit(next.line,"\t",fixed=T)[[1]]
-        }
-        if (frm$rnames) {
-          if(frm$match) {
-            lbl <- next.row[1]; 
-            row.sel <- match(lbl,cmb.row.list)
-            bigVar[row.sel,nxt.rng] <- as(next.row[-1], as.type)
-            file.rn[row.sel] <- lbl
-          } else {
-            if(col.mode) {
-              #prv("bigVar",counts=list(cc=cc,nxt.rng=nxt.rng[1]))
-              #prv(c("next.row","nxt.rng"))
-              file.rn[cc] <- next.row[1]; bigVar[cc,nxt.rng] <- as(next.row[-1], as.type)
-            } else {
-              selc <- 1:(length(next.row)-1)
-              file.rn[nxt.rng[cc]] <- next.row[1]; bigVar[nxt.rng[cc],selc] <- as(next.row[-1],as.type)
-            }
-          }
-        } else {
-          if(col.mode) {
-            bigVar[cc,nxt.rng] <- as(next.row,as.type)
-          } else {
-              prv(bigVar,nxt.rng,cc,next.row)
-            bigVar[nxt.rng[cc],] <- as(next.row,as.type)
-          }
-        }
-      }
-    } else {
-      ## read from (long) vector format tab file
-      if(col.mode) {
-        ## col-wise file splits
-        twty.pc <- round(cls1/divs) # flush data every 'n' cols
-        for (cc in 1:cls1) {
-          if(tracker) { loop.tracker(cc,cls1) }
-          if (do.fl & (cc %% twty.pc)==0)  { fl.suc <- bigmemory::flush(bigVar) ; if(!fl.suc) { cat("flush failed\n") } }
-          bigVar[,(cc+fil.ofs[ff])] <- as(readLines(dat.file,n=rws),as.type)
-        }
-      } else {
-        ## row-wise file splits
-        twty.pc <- round(rws1/divs)
-        for (cc in 1:cls) {
-          if(tracker) { loop.tracker(cc,cls) }
-          if (do.fl &(cc %% twty.pc)==0)  { fl.suc <- bigmemory::flush(bigVar) ; if(!fl.suc) { cat("flush failed\n") } }
-          bigVar[nxt.rng,cc] <- as(readLines(dat.file,n=rws1),as.type)
-        }
-      }
-    }
-    close(dat.file)
-  }
-  ### FINISH UP, RETURN BIGMATRIX DESCRIPTION ###
-  # in the case of different rownames found in matrix, then show following warning text:
-  if(!input.is.vec) {
-    if(frm$rname & !frm$match) {
-      if(!spec.rn) {
-        if(nrow(bigVar)==length(file.rn)) {
-          options(bigmemory.allow.dimnames=TRUE)
-          rownames(bigVar) <- file.rn; cat("updated big.matrix rownames from names in file(s)\n")
-          bigmemory::flush(bigVar)
-          big.des <- bigmemory::describe(bigVar)
-          des.fn <- cat.path(dir=dir$big,fn=des.fn,ext="RData")
-          save(big.des,file=des.fn)
-          warning("Had to change description file to a binary file to update rownames. This can be read in with get.big.matrix() [and should be faster to load]")
-        } else {
-          #prv(c("file.rn"))
-          miswarn <- T
-        }
-      } else {
-        #print("gere")
-      }
-    } else {
-      if(frm$match) {
-        miswarn <- T
-      } else {
-        #print("hereg")
-      }
-    }
-  }
-  if(miswarn) {
-    ofn <- cat.path(dir$ano,pref=pref,"_file_rowname_list_check_this.txt")
-    if(exists("file.rn")) { 
-      warning("rownames didn't match what was in filecheck the list in the file at:\n ",ofn) 
-      writeLines(paste(file.rn),con=ofn) ; cat("\n file preview:\n"); print(head(file.rn,10)); cat("\n")
-    } else {
-      warning(paste("rownames didn't match what was in file"))
-    }
-  }
-  cat("\n")
-  cat(paste(" created big.matrix description file:",des.fn,"\n"))
-  cat(paste(" created big.matrix backing file:",bck.fn,"\n"))
-  if(ret.obj) {
-    return(bigmemory::describe(bigVar))
-  } else {
-    # convert to RData file regardless as the old descriptor files are now very slow
-    big.des <- bigmemory::describe(bigVar)
-    des.fn <- cat.path(dir=dir$big,fn=des.fn,ext="RData")
-    save(big.des,file=des.fn)
-    return(des.fn)
-  }
-  cat("...complete!\n")
+    readr::read_lines(path, progress = FALSE)
+  })
 }
 
+.bigpca_import_resolve_name_inputs <- function(explicit, files_spec, dir, label) {
+  per_file <- FALSE
+  if (!is.null(explicit)) {
+    if (is.character(explicit) && length(explicit) == 1L) {
+      candidate <- tryCatch(cat.path(dir, explicit), error = function(...) explicit)
+      if (file.exists(candidate)) {
+        files_spec <- explicit
+        explicit <- NULL
+      }
+    }
+  }
+  if (!is.null(explicit)) {
+    if (is.list(explicit)) {
+      per_file <- length(explicit) > 1L
+      values <- lapply(explicit, function(x) {
+        if (!is.character(x)) {
+          stop(sprintf("%s names must be character vectors.", tools::toTitleCase(label)), call. = FALSE)
+        }
+        x
+      })
+    } else if (is.character(explicit)) {
+      values <- list(explicit)
+    } else {
+      stop(sprintf("%s names must be a character vector or list of character vectors.", label), call. = FALSE)
+    }
+    return(list(values = values, per_file = per_file, source = "explicit"))
+  }
+  if (!is.null(files_spec)) {
+    file_list <- as.list(files_spec)
+    values <- .bigpca_import_read_vector_file(file_list, dir, label)
+    per_file <- length(unlist(file_list)) > 1L
+    return(list(values = values, per_file = per_file, source = "file"))
+  }
+  list(values = vector("list", 0), per_file = FALSE, source = "none")
+}
+
+.bigpca_import_expand_list <- function(values, n_files, label) {
+  if (!length(values)) {
+    stop(sprintf("No %s names supplied for partitioned import.", label), call. = FALSE)
+  }
+  if (length(values) == 1L && n_files > 1L) {
+    return(rep(values, n_files))
+  }
+  if (length(values) != n_files) {
+    stop(sprintf("Number of %s name sets must equal the number of input files or be length one.", label), call. = FALSE)
+  }
+  values
+}
+
+.bigpca_import_build_spec <- function(files, dirs, long, rows.fn, cols.fn, row.names, col.names, ram.gb, cell_bytes, logger) {
+  n_files <- length(files)
+  row_input <- .bigpca_import_resolve_name_inputs(row.names, rows.fn, dirs$ano, "row")
+  col_input <- .bigpca_import_resolve_name_inputs(col.names, cols.fn, dirs$ano, "column")
+  if (n_files > 1L) {
+    if (row_input$per_file && !col_input$per_file) {
+      mode <- "rows"
+      row_lists <- .bigpca_import_expand_list(row_input$values, n_files, "row")
+      col_lists <- col_input$values
+    } else if (col_input$per_file && !row_input$per_file) {
+      mode <- "cols"
+      col_lists <- .bigpca_import_expand_list(col_input$values, n_files, "column")
+      row_lists <- row_input$values
+    } else if (row_input$per_file && col_input$per_file) {
+      stop("Provide either per-file row names or per-file column names, not both.", call. = FALSE)
+    } else {
+      stop("Multiple input files require per-file row or column names.", call. = FALSE)
+    }
+  } else if (isTRUE(long)) {
+    mode <- "long"
+    row_lists <- row_input$values
+    col_lists <- col_input$values
+  } else {
+    mode <- "single"
+    row_lists <- row_input$values
+    col_lists <- col_input$values
+  }
+  spec <- list(mode = mode, files = files, delim = "\t")
+  if (identical(mode, "single") || identical(mode, "long")) {
+    probe <- .bigpca_import_probe_file(files[1], delim = spec$delim)
+    total_lines <- .bigpca_import_count_lines(files[1])
+    nrow <- total_lines - as.integer(probe$header)
+    if (nrow <= 0L) {
+      stop("Input file contains no data rows.", call. = FALSE)
+    }
+    ncol <- probe$ncol
+    if (length(col_lists)) {
+      col_names <- col_lists[[1]]
+      if (length(col_names) != ncol) {
+        stop("Number of column names does not match detected column count.", call. = FALSE)
+      }
+    } else if (probe$header) {
+      col_names <- probe$header_fields
+      if (length(col_names) != ncol) {
+        col_names <- col_names[seq_len(ncol)]
+      }
+    } else {
+      col_names <- .bigpca_import_default_names("col", ncol)
+    }
+    capture_row_names <- FALSE
+    if (length(row_lists)) {
+      row_names <- row_lists[[1]]
+      if (length(row_names) != nrow) {
+        stop("Number of row names does not match detected row count.", call. = FALSE)
+      }
+    } else if (probe$row_names_in_file) {
+      row_names <- character(nrow)
+      capture_row_names <- TRUE
+    } else {
+      row_names <- .bigpca_import_default_names("row", nrow)
+    }
+    chunk_size <- min(nrow, .bigpca_import_compute_chunk_size(ncol, cell_bytes, ram.gb))
+    spec$nrow <- nrow
+    spec$ncol <- ncol
+    spec$col_names <- col_names
+    spec$row_names <- if (capture_row_names) NULL else row_names
+    spec$row_names_buffer <- if (capture_row_names) row_names else NULL
+    spec$file_specs <- list(list(
+      path = files[1],
+      header = probe$header,
+      row_names_in_file = probe$row_names_in_file,
+      chunk_size = chunk_size
+    ))
+  } else if (identical(mode, "rows")) {
+    col_template <- if (length(col_lists)) col_lists[[1]] else NULL
+    if (is.null(col_template) || !length(col_template)) {
+      probe <- .bigpca_import_probe_file(files[1], delim = spec$delim)
+      if (probe$row_names_in_file) {
+        stop("Row-partitioned files must not contain row names; supply them separately.", call. = FALSE)
+      }
+      col_template <- if (probe$header) probe$header_fields else .bigpca_import_default_names("col", probe$ncol)
+    }
+    ncol <- length(col_template)
+    row_lists <- .bigpca_import_expand_list(row_lists, n_files, "row")
+    row_lengths <- vapply(row_lists, length, integer(1))
+    nrow <- sum(row_lengths)
+    chunk_size <- min(max(row_lengths), .bigpca_import_compute_chunk_size(ncol, cell_bytes, ram.gb))
+    offsets <- cumsum(c(0L, row_lengths))
+    file_specs <- vector("list", n_files)
+    for (i in seq_len(n_files)) {
+      probe <- .bigpca_import_probe_file(files[i], delim = spec$delim)
+      if (probe$row_names_in_file) {
+        stop("Row-partitioned files must not contain row names.", call. = FALSE)
+      }
+      if (probe$ncol != ncol) {
+        stop(sprintf("File '%s' had %d columns but %d were expected.", basename(files[i]), probe$ncol, ncol), call. = FALSE)
+      }
+      file_specs[[i]] <- list(
+        path = files[i],
+        header = probe$header,
+        row_names_in_file = FALSE,
+        row_start = offsets[i] + 1L,
+        row_end = offsets[i + 1L],
+        chunk_size = min(row_lengths[i], chunk_size)
+      )
+    }
+    spec$nrow <- nrow
+    spec$ncol <- ncol
+    spec$col_names <- col_template
+    spec$row_names <- unlist(row_lists, use.names = FALSE)
+    spec$row_names_buffer <- NULL
+    spec$file_specs <- file_specs
+  } else if (identical(mode, "cols")) {
+    col_lists <- .bigpca_import_expand_list(col_lists, n_files, "column")
+    col_lengths <- vapply(col_lists, length, integer(1))
+    ncol <- sum(col_lengths)
+    if (!length(row_lists)) {
+      probe <- .bigpca_import_probe_file(files[1], delim = spec$delim)
+      if (!probe$row_names_in_file) {
+        stop("Column-partitioned imports require row names via 'row.names' or within the files.", call. = FALSE)
+      }
+      total_lines <- .bigpca_import_count_lines(files[1])
+      nrow <- total_lines - as.integer(probe$header)
+      row_template <- character(nrow)
+      needs_capture <- TRUE
+    } else {
+      row_template <- row_lists[[1]]
+      nrow <- length(row_template)
+      needs_capture <- FALSE
+    }
+    chunk_size <- min(nrow, .bigpca_import_compute_chunk_size(ncol, cell_bytes, ram.gb))
+    offsets <- cumsum(c(0L, col_lengths))
+    file_specs <- vector("list", n_files)
+    for (i in seq_len(n_files)) {
+      probe <- .bigpca_import_probe_file(files[i], delim = spec$delim)
+      if (probe$ncol != col_lengths[i]) {
+        stop(sprintf("File '%s' had %d columns but %d were expected.", basename(files[i]), probe$ncol, col_lengths[i]), call. = FALSE)
+      }
+      file_specs[[i]] <- list(
+        path = files[i],
+        header = probe$header,
+        row_names_in_file = probe$row_names_in_file,
+        col_start = offsets[i] + 1L,
+        col_end = offsets[i + 1L],
+        chunk_size = chunk_size
+      )
+    }
+    spec$nrow <- nrow
+    spec$ncol <- ncol
+    spec$col_names <- unlist(col_lists, use.names = FALSE)
+    spec$row_names <- if (needs_capture) NULL else row_template
+    spec$row_names_buffer <- if (needs_capture) row_template else NULL
+    spec$file_specs <- file_specs
+  } else if (identical(mode, "long")) {
+    if (!length(row_lists) || !length(col_lists)) {
+      stop("Long format import requires explicit 'row.names' and 'col.names'.", call. = FALSE)
+    }
+    row_vec <- row_lists[[1]]
+    col_vec <- col_lists[[1]]
+    spec$nrow <- length(row_vec)
+    spec$ncol <- length(col_vec)
+    spec$col_names <- col_vec
+    spec$row_names <- row_vec
+    spec$row_names_buffer <- NULL
+    spec$file_specs <- list(list(path = files[1]))
+  }
+  spec
+}
+
+.bigpca_import_initialise_target <- function(spec, dirs, pref, type_info, delete.existing) {
+  if (is.null(pref) || !nzchar(pref)) {
+    pref <- tools::file_path_sans_ext(basename(spec$files[1]))
+  }
+  backingfile <- sprintf("%s.bck", pref)
+  descriptorfile <- sprintf("%s.dsc", pref)
+  rdatafile <- sprintf("%s.RData", pref)
+  if (delete.existing) {
+    unlink(file.path(dirs$big, backingfile))
+    unlink(file.path(dirs$big, descriptorfile))
+    unlink(file.path(dirs$big, rdatafile))
+  }
+  matrix <- bigmemory::filebacked.big.matrix(
+    nrow = spec$nrow,
+    ncol = spec$ncol,
+    backingfile = backingfile,
+    descriptorfile = descriptorfile,
+    backingpath = dirs$big,
+    type = type_info$big,
+    dimnames = list(NULL, spec$col_names)
+  )
+  list(
+    matrix = matrix,
+    pref = pref,
+    backingfile = backingfile,
+    descriptorfile = descriptorfile,
+    rdatafile = rdatafile
+  )
+}
+
+.bigpca_import_coerce_chunk <- function(chunk, storage_mode) {
+  if (!nrow(chunk)) {
+    return(NULL)
+  }
+  mat <- as.matrix(chunk)
+  storage.mode(mat) <- storage_mode
+  mat
+}
+
+.bigpca_import_apply_row_names <- function(target, names_vec) {
+  options(bigmemory.allow.dimnames = TRUE)
+  rownames(target) <- names_vec
+}
+
+.bigpca_import_apply_col_names <- function(target, names_vec) {
+  options(bigmemory.allow.dimnames = TRUE)
+  colnames(target) <- names_vec
+}
+
+.bigpca_import_report_progress <- function(completed, total, logger) {
+  if (total <= 0) {
+    return(invisible())
+  }
+  percent <- (completed / total) * 100
+  logger("INFO", "Imported %.1f%% of rows", percent)
+}
+
+.bigpca_import_stream_single <- function(spec, target, type_info, tracker, logger) {
+  fs <- spec$file_specs[[1]]
+  row_buffer <- spec$row_names_buffer
+  row_pointer <- 0L
+  callback <- readr::SideEffectChunkCallback$new(function(chunk, pos) {
+    if (!nrow(chunk)) {
+      return()
+    }
+    if (fs$row_names_in_file) {
+      row_values <- chunk[[1]]
+      chunk <- chunk[-1]
+      indices <- seq_len(length(row_values)) + row_pointer
+      if (is.null(spec$row_names)) {
+        row_buffer[indices] <<- row_values
+      } else if (!identical(row_values, spec$row_names[indices])) {
+        stop("Row names in file do not match provided 'row.names'.", call. = FALSE)
+      }
+    }
+    mat <- .bigpca_import_coerce_chunk(chunk, type_info$storage)
+    indices <- seq_len(nrow(mat)) + row_pointer
+    target$matrix[indices, ] <- mat
+    row_pointer <<- row_pointer + nrow(mat)
+    if (tracker) {
+      .bigpca_import_report_progress(row_pointer, spec$nrow, logger)
+    }
+  })
+  readr::read_delim_chunked(
+    fs$path,
+    callback = callback,
+    chunk_size = fs$chunk_size,
+    delim = spec$delim,
+    col_names = fs$header,
+    show_col_types = FALSE,
+    progress = FALSE,
+    skip_empty_rows = TRUE,
+    col_types = readr::cols(.default = type_info$readr)
+  )
+  if (row_pointer != spec$nrow) {
+    stop("Number of imported rows did not match expectation.", call. = FALSE)
+  }
+  if (is.null(spec$row_names)) {
+    .bigpca_import_apply_row_names(target$matrix, row_buffer)
+  } else {
+    .bigpca_import_apply_row_names(target$matrix, spec$row_names)
+  }
+  invisible(target)
+}
+
+.bigpca_import_stream_rows <- function(spec, target, type_info, tracker, logger) {
+  for (fs in spec$file_specs) {
+    expected_rows <- fs$row_end - fs$row_start + 1L
+    row_pointer <- fs$row_start - 1L
+    rows_written <- 0L
+    callback <- readr::SideEffectChunkCallback$new(function(chunk, pos) {
+      if (!nrow(chunk)) {
+        return()
+      }
+      mat <- .bigpca_import_coerce_chunk(chunk, type_info$storage)
+      indices <- seq_len(nrow(mat)) + row_pointer
+      target$matrix[indices, ] <- mat
+      row_pointer <<- row_pointer + nrow(mat)
+      rows_written <<- rows_written + nrow(mat)
+      if (tracker) {
+        .bigpca_import_report_progress(rows_written, expected_rows, logger)
+      }
+    })
+    readr::read_delim_chunked(
+      fs$path,
+      callback = callback,
+      chunk_size = fs$chunk_size,
+      delim = spec$delim,
+      col_names = fs$header,
+      show_col_types = FALSE,
+      progress = FALSE,
+      skip_empty_rows = TRUE,
+      col_types = readr::cols(.default = type_info$readr)
+    )
+    if (rows_written != expected_rows) {
+      stop(sprintf("File '%s' did not supply the expected number of rows.", basename(fs$path)), call. = FALSE)
+    }
+  }
+  .bigpca_import_apply_row_names(target$matrix, spec$row_names)
+  invisible(target)
+}
+
+.bigpca_import_stream_cols <- function(spec, target, type_info, tracker, logger) {
+  row_buffer <- spec$row_names_buffer
+  for (fs in spec$file_specs) {
+    col_range <- seq(fs$col_start, fs$col_end)
+    row_pointer <- 0L
+    callback <- readr::SideEffectChunkCallback$new(function(chunk, pos) {
+      if (!nrow(chunk)) {
+        return()
+      }
+      if (fs$row_names_in_file) {
+        row_values <- chunk[[1]]
+        chunk <- chunk[-1]
+        indices <- seq_len(length(row_values)) + row_pointer
+        if (is.null(row_buffer)) {
+          if (!identical(row_values, spec$row_names[indices])) {
+            stop("Row names in column partitions do not match provided 'row.names'.", call. = FALSE)
+          }
+        } else {
+          row_buffer[indices] <<- row_values
+        }
+      }
+      mat <- .bigpca_import_coerce_chunk(chunk, type_info$storage)
+      indices <- seq_len(nrow(mat)) + row_pointer
+      target$matrix[indices, col_range] <- mat
+      row_pointer <<- row_pointer + nrow(mat)
+      if (tracker) {
+        .bigpca_import_report_progress(row_pointer, spec$nrow, logger)
+      }
+    })
+    readr::read_delim_chunked(
+      fs$path,
+      callback = callback,
+      chunk_size = fs$chunk_size,
+      delim = spec$delim,
+      col_names = fs$header,
+      show_col_types = FALSE,
+      progress = FALSE,
+      skip_empty_rows = TRUE,
+      col_types = readr::cols(.default = type_info$readr)
+    )
+    if (row_pointer != spec$nrow) {
+      stop(sprintf("File '%s' did not supply the expected number of rows.", basename(fs$path)), call. = FALSE)
+    }
+  }
+  if (!is.null(row_buffer)) {
+    .bigpca_import_apply_row_names(target$matrix, row_buffer)
+  } else {
+    .bigpca_import_apply_row_names(target$matrix, spec$row_names)
+  }
+  invisible(target)
+}
+
+.bigpca_import_stream_long <- function(spec, target, type_info, tracker, logger) {
+  values <- readr::read_lines(spec$files[1], progress = FALSE)
+  total_expected <- spec$nrow * spec$ncol
+  if (length(values) != total_expected) {
+    stop(sprintf("Long format file provided %d values but %d were expected.", length(values), total_expected), call. = FALSE)
+  }
+  if (type_info$storage %in% c("double", "integer")) {
+    values <- as.numeric(values)
+    if (anyNA(values)) {
+      stop("Failed to parse numeric values from long format input.", call. = FALSE)
+    }
+    if (identical(type_info$storage, "integer")) {
+      values <- as.integer(values)
+    }
+  } else if (!identical(type_info$storage, "character")) {
+    values <- as.numeric(values)
+  }
+  mat <- matrix(values, nrow = spec$nrow, ncol = spec$ncol, byrow = FALSE)
+  storage.mode(mat) <- type_info$storage
+  target$matrix[,] <- mat
+  .bigpca_import_apply_row_names(target$matrix, spec$row_names)
+  invisible(target)
+}
+
+#' Load delimited text into a file-backed big.matrix
+#'
+#' @param input.fn Character vector or list of input file paths. When multiple
+#'   files are supplied, they must represent either row-wise or column-wise
+#'   partitions of the data and the corresponding row/column names must be
+#'   provided via `row.names`/`rows.fn` or `col.names`/`cols.fn`.
+#' @param dir Directory (or list of directories) containing the data files and
+#'   output artefacts. A named list with entries `big`, `ano`, and `col` is
+#'   supported for backward compatibility.
+#' @param long Logical flag indicating whether the input is a single long-format
+#'   vector of values. When `TRUE`, both `row.names` and `col.names` must be
+#'   supplied.
+#' @param rows.fn,cols.fn Optional character vectors of filenames containing row
+#'   or column names. These are primarily used when reading partitioned inputs.
+#' @param pref Prefix for the generated backing and descriptor files.
+#' @param delete.existing Logical; overwrite existing outputs sharing the same
+#'   prefix.
+#' @param ret.obj Logical; return the big.matrix descriptor object instead of
+#'   the saved descriptor path.
+#' @param verbose Logical; emit progress messages.
+#' @param row.names,col.names Optional character vectors or lists providing row
+#'   or column names directly.
+#' @param dat.type Storage mode requested for the big.matrix (e.g. "double",
+#'   "integer").
+#' @param ram.gb Approximate gigabytes of RAM that can be used for chunked
+#'   reading.
+#' @param hd.gb Estimated free disk space (in gigabytes) required to accept the
+#'   import; used for guard-rail checks.
+#' @param tracker Logical; emit progress updates during streaming.
+#'
+#' @return When `ret.obj = FALSE` (default) the path to the saved descriptor
+#'   (`.RData`) file is returned. When `ret.obj = TRUE` the in-memory descriptor
+#'   object is returned.
+#' @export
+import.big.data <- function(input.fn = NULL, dir = getwd(), long = FALSE, rows.fn = NULL, cols.fn = NULL,
+                              pref = "", delete.existing = TRUE, ret.obj = FALSE, verbose = TRUE,
+                              row.names = NULL, col.names = NULL, dat.type = "double", ram.gb = 2,
+                              hd.gb = 1000, tracker = TRUE) {
+  logger <- .bigpca_logger(verbose)
+  if (is.null(input.fn)) {
+    stop("input.fn must be supplied.", call. = FALSE)
+  }
+  delete.existing <- .bigpca_validate_logical_scalar(delete.existing, "delete.existing")
+  ret.obj <- .bigpca_validate_logical_scalar(ret.obj, "ret.obj")
+  long <- .bigpca_validate_logical_scalar(long, "long")
+  tracker <- .bigpca_validate_logical_scalar(tracker, "tracker")
+  dirs <- .bigpca_normalise_dirs(dir)
+  files <- unlist(input.fn)
+  if (!length(files)) {
+    stop("No input files provided in 'input.fn'.", call. = FALSE)
+  }
+  files <- vapply(files, function(x) {
+    if (file.exists(x)) {
+      x
+    } else {
+      cat.path(dirs$col, x, must.exist = TRUE)
+    }
+  }, character(1))
+  type_info <- .bigpca_import_resolve_data_type(dat.type)
+  spec <- .bigpca_import_build_spec(files, dirs, long, rows.fn, cols.fn, row.names, col.names, ram.gb, type_info$bytes, logger)
+  estimated_usage <- (spec$nrow * spec$ncol * type_info$bytes) / (1024^3)
+  if (estimated_usage > hd.gb) {
+    stop(sprintf("Estimated disk usage %.2f GB exceeds hd.gb (%.2f GB).", estimated_usage, hd.gb), call. = FALSE)
+  }
+  previous_dim_option <- getOption("bigmemory.allow.dimnames")
+  on.exit(options(bigmemory.allow.dimnames = previous_dim_option), add = TRUE)
+  options(bigmemory.allow.dimnames = TRUE)
+  target <- .bigpca_import_initialise_target(spec, dirs, pref, type_info, delete.existing)
+  logger("INFO", "Importing %d x %d matrix to backing '%s'.", spec$nrow, spec$ncol, target$backingfile)
+  if (identical(spec$mode, "single")) {
+    .bigpca_import_stream_single(spec, target, type_info, tracker, logger)
+  } else if (identical(spec$mode, "rows")) {
+    .bigpca_import_stream_rows(spec, target, type_info, tracker, logger)
+  } else if (identical(spec$mode, "cols")) {
+    .bigpca_import_stream_cols(spec, target, type_info, tracker, logger)
+  } else if (identical(spec$mode, "long")) {
+    .bigpca_import_stream_long(spec, target, type_info, tracker, logger)
+  } else {
+    stop(sprintf("Unsupported import mode '%s'.", spec$mode), call. = FALSE)
+  }
+  bigmemory::flush(target$matrix)
+  descriptor <- bigmemory::describe(target$matrix)
+  if (ret.obj) {
+    return(descriptor)
+  }
+  rdata_path <- cat.path(dirs$big, target$rdatafile)
+  save(descriptor, file = rdata_path)
+  logger("INFO", "Saved big.matrix descriptor to %s", rdata_path)
+  rdata_path
+}
 
 # mean replacement code internal
 row.rep <- function(X) { X[is.na(X)] <- mean(X,na.rm=T); X }

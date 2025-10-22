@@ -26,7 +26,8 @@ Imports:
     reader (>= 1.0.10),
     NCmisc (>= 1.1.7),
     bigmemory (>= 4.6.1),
-    irlba (>= 2.3.5)
+    irlba (>= 2.3.5),
+    readr (>= 2.1.4)
 Suggests:
     testthat (>= 3.0.0),
     withr
