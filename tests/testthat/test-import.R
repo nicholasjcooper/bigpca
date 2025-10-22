@@ -111,3 +111,32 @@ test_that("import.big.data assembles row-wise partitions", {
   bm <- get.big.matrix(desc)
   expect_equal(bigmemory::as.matrix(bm), mat)
 })
+
+
++test_that("import.big.data assembles column-wise partitions", {
++  mat <- synthetic_matrix()
++  tmp <- withr::local_tempdir()
++  withr::local_dir(tmp)
++  withr::local_options(list(deleteFileBacked = TRUE))
++
++  col_groups <- list(1:3, 4:ncol(mat))
++  input_files <- character(length(col_groups))
++  col_list <- vector("list", length(col_groups))
++  for (idx in seq_along(col_groups)) {
++    subset_cols <- col_groups[[idx]]
++    chunk <- mat[, subset_cols, drop = FALSE]
++    input_files[[idx]] <- file.path(tmp, sprintf("col_chunk_%d.tsv", idx))
++    write.table(chunk, file = input_files[[idx]], sep = "\t", row.names = FALSE, col.names = FALSE, quote = FALSE)
++    col_list[[idx]] <- colnames(chunk)
++  }
++
++  desc <- import.big.data(
++    input_files,
++    row.names = rownames(mat),
++    col.names = col_list,
++    pref = "col_partition",
++    verbose = FALSE
++  )
++  bm <- get.big.matrix(desc)
++  expect_equal(bigmemory::as.matrix(bm), mat)
++})
