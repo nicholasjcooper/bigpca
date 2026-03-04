@@ -1,7 +1,41 @@
 exportPattern("^[[:alpha:]]+")
-import(methods, grDevices, graphics, stats, utils, reader, NCmisc, bigmemory)
-importFrom(parallel, mclapply)
+
+import(methods, grDevices, graphics, stats, utils, parallel)
+
+importFrom(bigmemory,
+    big.matrix,
+    as.big.matrix,
+    attach.big.matrix,
+    describe,
+    deepcopy,
+    filebacked.big.matrix,
+    is.big.matrix,
+    is.filebacked,
+    is.sub.big.matrix,
+    sub.big.matrix
+)
+
+importFrom(NCmisc,
+    estimate.memory,
+    file.nrow,
+    file.ncol,
+    find.file,
+    headl,
+    Mode,
+    prv,
+    prv.large,
+    loop.tracker,
+    narm,
+    sim.cor
+)
+
+importFrom(reader,
+    reader,
+    get.delim
+)
+
 importFrom(irlba, irlba)
+
 S3method("$", bigpca_result)
 S3method("[[", bigpca_result)
 S3method(print, bigpca_result)
