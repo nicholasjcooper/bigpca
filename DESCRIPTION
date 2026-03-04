@@ -14,7 +14,7 @@ Description: Provides PCA workflows, thinning helpers, and import utilities for
     file-backed matrices. The package wraps native 'big.matrix' operations,
     offers custom IRLBA integrations, and includes pragmatic utilities for
     previewing and restructuring large matrices.
-License: GPL (>= 2)
+License: GPL (>= 2) + file LICENSE
 Depends: R (>= 4.1)
 Imports:
     methods,
@@ -34,6 +34,3 @@ Encoding: UTF-8
 LazyData: false
 SystemRequirements: BLAS libraries such as OpenBLAS, Accelerate, or ATLAS when using
     optional bigmemory acceleration
-Collate:
-    'bigpca.R'
-    'irlba2.R'
